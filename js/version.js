@@ -81,7 +81,7 @@ class VersionManager {
 		document.body.appendChild(modal);
 
 		// preventing all events from bubbling up to the parent
-		// we *really* don't want to mess with the map canvas while its open
+		// we *really* don't want to mess with the map canvas while it's open
 		['click', 'mousedown', 'mouseup', 'mousemove', 'wheel'].forEach(eventType => {
 			modal.addEventListener(eventType, (e) => {
 				e.stopPropagation();
