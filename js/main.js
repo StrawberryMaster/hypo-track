@@ -994,6 +994,19 @@ var HypoTrack = (function () {
 
             if (autosave) Database.save();
         };
+
+        // Export to HURDAT button
+        const exportHURDATButton = button('Export', buttonsFragment);
+        exportHURDATButton.onclick = () => {
+            const hurdat = exportHURDAT();
+            const blob = new Blob([hurdat], { type: 'text/plain' });
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            link.download = `hypo-track-hurdat-${timestamp}.txt`;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            URL.revokeObjectURL(link.href);
+        };
         buttons.appendChild(buttonsFragment);
 
         // Checkboxes
@@ -1035,6 +1048,105 @@ var HypoTrack = (function () {
         const saveloadui = div();
         const saveloadFragment = new DocumentFragment();
         mainFragment.appendChild(saveloadui);
+
+        // HURDAT export helpers
+        const HURDAT_FORMATS = {
+            HEADER: (id, count) => `${id},                STORMNAME,     ${count},\n`,
+            ENTRY: `${year}%M%D, %T,  , %Y, %LAT, %LON, %W, %P,\n`
+        };
+
+        const SPEEDS = [30, 50, 75, 90, 105, 125, 140];
+        const PRESSURES = [1009, 1000, 987, 969, 945, 920, 898, 1012];
+
+        const TYPE_CODES = {
+            EX: 'EX',
+            SD: 'SD',
+            SS: 'SS',
+            TD: 'TD',
+            TS: 'TS',
+            HU: 'HU'
+        };
+
+        function getTypeCode(type, cat) {
+            if (type === 2) return TYPE_CODES.EX;
+            if (type === 1) return cat <= 1 ? TYPE_CODES.SD : TYPE_CODES.SS;
+            if (type === 0) {
+                if (cat === 0) return TYPE_CODES.TD;
+                if (cat === 1) return TYPE_CODES.TS;
+                return TYPE_CODES.HU;
+            }
+        }
+
+        function getWindSpeed(cat) {
+            return SPEEDS[Math.min(cat, SPEEDS.length - 1)];
+        }
+
+        function getPressure(cat) {
+            return PRESSURES[cat];
+        }
+
+        const padCache = new Map();
+        function padNumber(num, width) {
+            const key = num * 100 + width;
+            let padded = padCache.get(key);
+            if (!padded) {
+                padded = num.toString().padStart(width, '0');
+                if (padCache.size < 1000) { // prevent unlimited growth
+                    padCache.set(key, padded);
+                }
+            }
+            return padded;
+        }
+
+        function formatLatLon(val, isLat) {
+            const absVal = Math.abs(val);
+            const hemisphere = isLat ?
+                (val >= 0 ? 'N' : 'S') :
+                (val >= 0 ? 'E' : 'W');
+            return absVal.toFixed(1) + hemisphere;
+        }
+
+        function exportHURDAT() {
+            const year = new Date().getFullYear();
+            const parts = [];
+
+            tracks.forEach((track, index) => {
+                if (track.length === 0) return;
+
+                const stormId = 'MT' + padNumber(index + 1, 2) + year;
+                const header = HURDAT_FORMATS.HEADER(stormId, track.length);
+
+                const entries = new Array(track.length);
+                for (let i = 0; i < track.length; i++) {
+                    const point = track[i];
+                    const day = Math.floor(i / 4) + 1;
+                    const month = Math.floor(day / 31) + 1;
+                    const dayOfMonth = day % 31 || 31;
+                    const timeOfDay = (i % 4) * 600;
+
+                    entries[i] = year +
+                        padNumber(month, 2) +
+                        padNumber(dayOfMonth, 2) +
+                        ', ' +
+                        padNumber(timeOfDay, 4) +
+                        ',  , ' +
+                        getTypeCode(point.type, point.cat) +
+                        ', ' +
+                        formatLatLon(point.lat, true).padStart(5) +
+                        ', ' +
+                        formatLatLon(point.long, false).padStart(6) +
+                        ', ' +
+                        String(getWindSpeed(point.cat)).padStart(3) +
+                        ', ' +
+                        getPressure(point.cat) +
+                        ',\n';
+                }
+
+                parts.push(header, entries.join(''), header);
+            });
+
+            return parts.join('');
+        }
 
         const saveButton = button('Save', saveloadFragment);
         const saveNameTextbox = textbox('save-name-textbox', 'Season save name:', saveloadFragment);
@@ -1187,6 +1299,7 @@ var HypoTrack = (function () {
     return {
         tracks: function () {
             return tracks;
-        }
+        },
+        exportHURDAT: exportHURDAT
     };
 })();
