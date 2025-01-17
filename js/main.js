@@ -995,18 +995,6 @@ var HypoTrack = (function () {
             if (autosave) Database.save();
         };
 
-        // Export to HURDAT button
-        const exportHURDATButton = button('Export', buttonsFragment);
-        exportHURDATButton.onclick = () => {
-            const hurdat = exportHURDAT();
-            const blob = new Blob([hurdat], { type: 'text/plain' });
-            const link = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            link.download = `hypo-track-hurdat-${timestamp}.txt`;
-            link.href = URL.createObjectURL(blob);
-            link.click();
-            URL.revokeObjectURL(link.href);
-        };
         buttons.appendChild(buttonsFragment);
 
         // Checkboxes
@@ -1044,10 +1032,41 @@ var HypoTrack = (function () {
         };
         buttons.appendChild(checkboxFragment);
 
-        // Save/Load UI //
-        const saveloadui = div();
-        const saveloadFragment = new DocumentFragment();
-        mainFragment.appendChild(saveloadui);
+        // Export/Import UI //
+        const exportButtons = div();
+        exportButtons.id = "export-buttons";
+        mainFragment.appendChild(exportButtons);
+
+        const createExportButton = (text, action) => {
+            const exportFragment = new DocumentFragment();
+            const btn = button(text, exportFragment);
+            btn.classList.add("btn");
+            btn.onclick = action;
+            exportButtons.appendChild(exportFragment);
+            return btn;
+        };
+
+        createExportButton('Export HURDAT', () => {
+            const hurdat = exportHURDAT();
+            const blob = new Blob([hurdat], { type: 'text/plain' });
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            link.download = `hypo-track-hurdat-${timestamp}.txt`;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            URL.revokeObjectURL(link.href);
+        });
+
+        createExportButton('Export JSON', () => {
+            const json = exportJSON();
+            const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            link.download = `hypo-track-json-${timestamp}.json`;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            URL.revokeObjectURL(link.href);
+        });
 
         // HURDAT export helpers
         const HURDAT_FORMATS = {
@@ -1147,6 +1166,46 @@ var HypoTrack = (function () {
 
             return parts.join('');
         }
+
+        // JSON export helpers
+        const STAGE_NAMES = {
+            EX: 'Extratropical cyclone',
+            SD: 'Subtropical cyclone',
+            SS: 'Subtropical cyclone',
+            TD: 'Tropical cyclone',
+            TS: 'Tropical cyclone',
+            HU: 'Tropical cyclone'
+        };
+
+        function getStageName(type, cat) {
+            const code = getTypeCode(type, cat);
+            return STAGE_NAMES[code];
+        }
+
+        function exportJSON() {
+            const result = [];
+
+            tracks.forEach(track => {
+                if (track.length === 0) return;
+
+                track.forEach(point => {
+                    result.push({
+                        name: "STORMNAME",
+                        latitude: formatLatLon(point.lat, true),
+                        longitude: formatLatLon(point.long, false),
+                        speed: getWindSpeed(point.cat),
+                        stage: getStageName(point.type, point.cat)
+                    });
+                });
+            });
+
+            return result;
+        }
+
+        // Save/Load UI //
+        const saveloadui = div();
+        const saveloadFragment = new DocumentFragment();
+        mainFragment.appendChild(saveloadui);
 
         const saveButton = button('Save', saveloadFragment);
         const saveNameTextbox = textbox('save-name-textbox', 'Season save name:', saveloadFragment);
@@ -1300,6 +1359,5 @@ var HypoTrack = (function () {
         tracks: function () {
             return tracks;
         },
-        exportHURDAT: exportHURDAT
     };
 })();

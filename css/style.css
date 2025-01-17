@@ -81,11 +81,11 @@ ul li {
 		padding: 1rem;
 	}
 
-	#undo-redo {
+	#undo-redo, #export-buttons {
 		flex-direction: row;
 	}
 
-	#undo-redo .btn {
+	#undo-redo .btn, #export-buttons .btn {
 		margin: 0 .5rem;
 	}
 
@@ -112,6 +112,15 @@ ul li {
 		flex-flow: column nowrap;
 		max-width: 100%;
 		padding: 0.5rem;
+	}
+
+	#undo-redo, #export-buttons {
+		flex-direction: column;
+	}
+
+	#undo-redo .btn, #export-buttons .btn {
+		margin: 0.25rem 0;
+		width: 100%;
 	}
 
 	#undo-redo {
@@ -148,6 +157,16 @@ ul li {
 	border-radius: .4rem;
 }
 
+#undo-redo, #export-buttons {
+	display: flex;
+	justify-content: space-between;
+}
+
+#undo-redo .btn, #export-buttons .btn {
+	flex: 1;
+	margin: 0 .5rem;
+}
+
 #undo-redo {
 	display: flex;
 	justify-content: space-between;
@@ -156,6 +175,19 @@ ul li {
 #undo-redo .btn {
 	flex: 1;
 	margin: 0 .5rem;
+}
+
+#export-buttons button {
+    margin-bottom: 0.5rem;
+    width: 100%;
+}
+
+#export-buttons div button {
+    background-color: #444;
+}
+
+#export-buttons div button:hover {
+    background-color: #555;
 }
 
 img {
