@@ -1033,9 +1033,13 @@ var HypoTrack = (function () {
         buttons.appendChild(checkboxFragment);
 
         // Export/Import UI //
+        const exportContainer = div();
+        exportContainer.id = "export-container";
+        mainFragment.appendChild(exportContainer);
+
         const exportButtons = div();
         exportButtons.id = "export-buttons";
-        mainFragment.appendChild(exportButtons);
+        exportContainer.appendChild(exportButtons);
 
         const createExportButton = (text, action) => {
             const exportFragment = new DocumentFragment();
@@ -1058,8 +1062,13 @@ var HypoTrack = (function () {
         });
 
         createExportButton('Export JSON', () => {
+            const compressJson = compressJsonCheckbox.checked;
             const json = exportJSON();
-            const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+            const jsonString = compressJson
+                ? JSON.stringify(json)
+                : JSON.stringify(json, null, 2);
+
+            const blob = new Blob([jsonString], { type: 'application/json' });
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             link.download = `hypo-track-json-${timestamp}.json`;
@@ -1067,6 +1076,23 @@ var HypoTrack = (function () {
             link.click();
             URL.revokeObjectURL(link.href);
         });
+
+        const jsonOptionsDiv = div();
+        jsonOptionsDiv.style.border = 'none';
+        jsonOptionsDiv.style.padding = '.2rem 0 0 0';
+        jsonOptionsDiv.style.marginBottom = 0;
+        exportContainer.appendChild(jsonOptionsDiv);
+
+        const compressJsonCheckbox = createElement('input', {
+            type: 'checkbox',
+            id: 'compress-json-checkbox'
+        });
+        const compressLabel = createElement('label', {
+            htmlFor: 'compress-json-checkbox',
+            textContent: 'Compress JSON'
+        });
+        jsonOptionsDiv.appendChild(compressJsonCheckbox);
+        jsonOptionsDiv.appendChild(compressLabel);
 
         // HURDAT export helpers
         const HURDAT_FORMATS = {

@@ -157,12 +157,15 @@ ul li {
 	border-radius: .4rem;
 }
 
-#undo-redo, #export-buttons {
+#undo-redo, #export-container #export-buttons {
+	border: none;
 	display: flex;
 	justify-content: space-between;
+    margin-bottom: .2rem;
+    padding: 0;
 }
 
-#undo-redo .btn, #export-buttons .btn {
+#undo-redo .btn, #export-container #export-buttons .btn {
 	flex: 1;
 	margin: 0 .5rem;
 }
@@ -177,16 +180,16 @@ ul li {
 	margin: 0 .5rem;
 }
 
-#export-buttons button {
+#export-container #export-buttons button {
     margin-bottom: 0.5rem;
     width: 100%;
 }
 
-#export-buttons div button {
+#export-container #export-buttons div button {
     background-color: #444;
 }
 
-#export-buttons div button:hover {
+#export-container #export-buttons div button:hover {
     background-color: #555;
 }
 
