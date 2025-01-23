@@ -1201,7 +1201,6 @@ function cleanHURDATInput(hurdatData) {
 const rawHURDATData = `...`; // Placeholder for raw HURDAT2 data
 const cleanedData = cleanHURDATInput(rawHURDATData);
 console.log(cleanedData);
-        
     }
     
         // JSON export helpers
