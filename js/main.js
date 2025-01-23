@@ -1091,118 +1091,132 @@ var HypoTrack = (function () {
             htmlFor: 'compress-json-checkbox',
             textContent: 'Compress JSON'
         });
+        const compatibilityModeCheckbox = createElement('input', {
+            type: 'checkbox',
+            id: 'compatibility-mode-checkbox'
+        });
+        const compatibilityLabel = createElement('label', {
+            htmlFor: 'compatibility-mode-checkbox',
+            textContent: 'Compatibility mode'
+        });
         jsonOptionsDiv.appendChild(compressJsonCheckbox);
         jsonOptionsDiv.appendChild(compressLabel);
+        jsonOptionsDiv.appendChild(document.createElement('br'));
+        jsonOptionsDiv.appendChild(compatibilityModeCheckbox);
+        jsonOptionsDiv.appendChild(compatibilityLabel);
 
         // HURDAT export helpers
-const HURDAT_FORMATS = {
-    HEADER: (id, stormName, count) => `${id},                ${stormName},     ${count},\n`,
-    ENTRY: `${year}%M%D, %T,  , %Y, %LAT, %LON, %W, %P, 0, 0, 0, 0, 0, 0, 0, 0,\n`,
-};
+        const HURDAT_FORMATS = {
+            HEADER: (id, count) => `${id},                STORMNAME,     ${count},\n`,
+            ENTRY: `${year}%M%D, %T,  , %Y, %LAT, %LON, %W, %P,\n`
+        };
 
-const SPEEDS = [30, 50, 75, 90, 105, 125, 140];
-const PRESSURES = [1009, 1000, 987, 969, 945, 920, 898, 1012];
+        const SPEEDS = [30, 50, 75, 90, 105, 125, 140];
+        const PRESSURES = [1009, 1000, 987, 969, 945, 920, 898, 1012];
 
-const TYPE_CODES = {
-    EX: 'EX',
-    SD: 'SD',
-    SS: 'SS',
-    TD: 'TD',
-    TS: 'TS',
-    HU: 'HU'
-};
+        const TYPE_CODES = {
+            EX: 'EX',
+            SD: 'SD',
+            SS: 'SS',
+            TD: 'TD',
+            TS: 'TS',
+            HU: 'HU'
+        };
 
-function getTypeCode(type, cat) {
-    if (type === 2) return TYPE_CODES.EX;
-    if (type === 1) return cat <= 1 ? TYPE_CODES.SD : TYPE_CODES.SS;
-    if (type === 0) {
-        if (cat === 0) return TYPE_CODES.TD;
-        if (cat === 1) return TYPE_CODES.TS;
-        return TYPE_CODES.HU;
-    }
-}
-
-function getWindSpeed(cat) {
-    return SPEEDS[Math.min(cat, SPEEDS.length - 1)];
-}
-
-function getPressure(cat) {
-    return PRESSURES[cat];
-}
-
-const padCache = new Map();
-function padNumber(num, width) {
-    const key = num * 100 + width;
-    let padded = padCache.get(key);
-    if (!padded) {
-        padded = num.toString().padStart(width, '0');
-        if (padCache.size < 1000) {
-            padCache.set(key, padded);
-        }
-    }
-    return padded;
-}
-
-function formatLatLon(val, isLat) {
-    const absVal = Math.abs(val);
-    const hemisphere = isLat ?
-        (val >= 0 ? 'N' : 'S') :
-        (val >= 0 ? 'E' : 'W');
-    return absVal.toFixed(1) + hemisphere;
-}
-
-function exportHURDAT() {
-    const year = new Date().getFullYear();
-    const parts = [];
-
-    tracks.forEach((track, index) => {
-        if (track.length === 0) return;
-
-        const stormId = 'MT' + padNumber(index + 1, 2) + year;
-        const header = HURDAT_FORMATS.HEADER(stormId, 'STORMNAME', track.length);
-
-        const entries = new Array(track.length);
-        for (let i = 0; i < track.length; i++) {
-            const point = track[i];
-            const day = Math.floor(i / 4) + 1;
-            const month = Math.floor(day / 31) + 1;
-            const dayOfMonth = day % 31 || 31;
-            const timeOfDay = (i % 4) * 600;
-
-            entries[i] = year +
-                padNumber(month, 2) +
-                padNumber(dayOfMonth, 2) +
-                ', ' +
-                padNumber(timeOfDay, 4) +
-                ',  , ' +
-                getTypeCode(point.type, point.cat) +
-                ', ' +
-                formatLatLon(point.lat, true).padStart(5) +
-                ', ' +
-                formatLatLon(point.long, false).padStart(6) +
-                ', ' +
-                String(getWindSpeed(point.cat)).padStart(3) +
-                ', ' +
-                getPressure(point.cat) +
-                ', 0, 0, 0, 0, 0, 0, 0, 0,\n';
+        function getTypeCode(type, cat) {
+            if (type === 2) return TYPE_CODES.EX;
+            if (type === 1) return cat <= 1 ? TYPE_CODES.SD : TYPE_CODES.SS;
+            if (type === 0) {
+                if (cat === 0) return TYPE_CODES.TD;
+                if (cat === 1) return TYPE_CODES.TS;
+                return TYPE_CODES.HU;
+            }
         }
 
-        parts.push(header, entries.join(''));
-    });
+        function getWindSpeed(cat) {
+            return SPEEDS[Math.min(cat, SPEEDS.length - 1)];
+        }
 
-    return parts.join('');
-}
+        function getPressure(cat) {
+            return PRESSURES[cat];
+        }
 
-function cleanHURDATInput(hurdatData) {
-    return hurdatData.split('\n').filter(line => !/^MT\d{2}\d{4},\s{16}\S+,\s+\d+,$/.test(line)).join('\n');
-}
+        const padCache = new Map();
+        function padNumber(num, width) {
+            const key = num * 100 + width;
+            let padded = padCache.get(key);
+            if (!padded) {
+                padded = num.toString().padStart(width, '0');
+                if (padCache.size < 1000) { // prevent unlimited growth
+                    padCache.set(key, padded);
+                }
+            }
+            return padded;
+        }
 
-// Example of usage
-const rawHURDATData = `...`; // Placeholder for raw HURDAT2 data
-const cleanedData = cleanHURDATInput(rawHURDATData);
-console.log(cleanedData);
-    }
-    
+        function formatLatLon(val, isLat) {
+            const absVal = Math.abs(val);
+            const hemisphere = isLat ?
+                (val >= 0 ? 'N' : 'S') :
+                (val >= 0 ? 'E' : 'W');
+            return absVal.toFixed(1) + hemisphere;
+        }
+
+        function exportHURDAT() {
+            const year = new Date().getFullYear();
+            const parts = [];
+            const compatibilityMode = document.getElementById('compatibility-mode-checkbox').checked;
+
+            tracks.forEach((track, index) => {
+                if (track.length === 0) return;
+
+                const stormId = 'MT' + padNumber(index + 1, 2) + year;
+                const header = HURDAT_FORMATS.HEADER(stormId, track.length);
+
+                const entries = new Array(track.length);
+                for (let i = 0; i < track.length; i++) {
+                    const point = track[i];
+                    const day = Math.floor(i / 4) + 1;
+                    const month = Math.floor(day / 31) + 1;
+                    const dayOfMonth = day % 31 || 31;
+                    const timeOfDay = (i % 4) * 600;
+
+                    let entry = year +
+                        padNumber(month, 2) +
+                        padNumber(dayOfMonth, 2) +
+                        ', ' +
+                        padNumber(timeOfDay, 4) +
+                        ',  , ' +
+                        getTypeCode(point.type, point.cat) +
+                        ', ' +
+                        formatLatLon(point.lat, true).padStart(5) +
+                        ', ' +
+                        formatLatLon(point.long, false).padStart(6) +
+                        ', ' +
+                        String(getWindSpeed(point.cat)).padStart(3) +
+                        ', ' +
+                        getPressure(point.cat) +
+                        ',\n';
+
+                    if (compatibilityMode) {
+                        entry = entry.replace(/,\n$/, '') + ', ' + Array(14).fill('-999').join(', ') + ',\n';
+                    }
+
+                    entries[i] = entry;
+                }
+
+                if (!compatibilityMode) {
+                    parts.push(header);
+                }
+                parts.push(entries.join(''));
+                if (!compatibilityMode) {
+                    parts.push(header);
+                }
+            });
+
+            return parts.join('');
+        }
+
         // JSON export helpers
         const STAGE_NAMES = {
             EX: 'Extratropical cyclone',
@@ -1327,7 +1341,7 @@ console.log(cleanedData);
 
         uicontainer.appendChild(mainFragment);
         refreshGUI();
-    }
+    };
 
     _p5.keyPressed = function () {
         if (suppresskeybinds) return;
