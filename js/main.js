@@ -1091,8 +1091,19 @@ var HypoTrack = (function () {
             htmlFor: 'compress-json-checkbox',
             textContent: 'Compress JSON'
         });
+        const compatibilityModeCheckbox = createElement('input', {
+            type: 'checkbox',
+            id: 'compatibility-mode-checkbox'
+        });
+        const compatibilityLabel = createElement('label', {
+            htmlFor: 'compatibility-mode-checkbox',
+            textContent: 'Compatibility mode'
+        });
         jsonOptionsDiv.appendChild(compressJsonCheckbox);
         jsonOptionsDiv.appendChild(compressLabel);
+        jsonOptionsDiv.appendChild(document.createElement('br'));
+        jsonOptionsDiv.appendChild(compatibilityModeCheckbox);
+        jsonOptionsDiv.appendChild(compatibilityLabel);
 
         // HURDAT export helpers
         const HURDAT_FORMATS = {
@@ -1154,6 +1165,7 @@ var HypoTrack = (function () {
         function exportHURDAT() {
             const year = new Date().getFullYear();
             const parts = [];
+            const compatibilityMode = document.getElementById('compatibility-mode-checkbox').checked;
 
             tracks.forEach((track, index) => {
                 if (track.length === 0) return;
@@ -1169,7 +1181,7 @@ var HypoTrack = (function () {
                     const dayOfMonth = day % 31 || 31;
                     const timeOfDay = (i % 4) * 600;
 
-                    entries[i] = year +
+                    let entry = year +
                         padNumber(month, 2) +
                         padNumber(dayOfMonth, 2) +
                         ', ' +
@@ -1185,9 +1197,21 @@ var HypoTrack = (function () {
                         ', ' +
                         getPressure(point.cat) +
                         ',\n';
+
+                    if (compatibilityMode) {
+                        entry = entry.replace(/,\n$/, '') + ', ' + Array(14).fill('-999').join(', ') + ',\n';
+                    }
+
+                    entries[i] = entry;
                 }
 
-                parts.push(header, entries.join(''), header);
+                if (!compatibilityMode) {
+                    parts.push(header);
+                }
+                parts.push(entries.join(''));
+                if (!compatibilityMode) {
+                    parts.push(header);
+                }
             });
 
             return parts.join('');
