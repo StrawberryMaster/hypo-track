@@ -1327,7 +1327,7 @@ console.log(cleanedData);
 
         uicontainer.appendChild(mainFragment);
         refreshGUI();
-    };
+    }
 
     _p5.keyPressed = function () {
         if (suppresskeybinds) return;
