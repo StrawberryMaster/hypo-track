@@ -1155,10 +1155,16 @@ var HypoTrack = (function () {
         }
 
         function formatLatLon(val, isLat) {
-            const absVal = Math.abs(val);
+            let adjustedVal = val;
+            if (!isLat) {
+                // we need to normalize longitudes to -180 to 180
+                // this is so we don't deal with incorrect values
+                adjustedVal = ((val + 180) % 360 + 360) % 360 - 180;
+            }
+            const absVal = Math.abs(adjustedVal);
             const hemisphere = isLat ?
-                (val >= 0 ? 'N' : 'S') :
-                (val >= 0 ? 'E' : 'W');
+                (adjustedVal >= 0 ? 'N' : 'S') :
+                (adjustedVal >= 0 ? 'E' : 'W');
             return absVal.toFixed(1) + hemisphere;
         }
 
