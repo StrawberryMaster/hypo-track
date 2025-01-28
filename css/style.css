@@ -16,6 +16,11 @@ select {
 	margin: .15rem .25rem;
 }
 
+label[title] {
+    border-bottom: 1px dotted #999;
+    cursor: help;
+}
+
 #version {
 	position: fixed;
 	bottom: 0;

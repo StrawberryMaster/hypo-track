@@ -1089,7 +1089,8 @@ var HypoTrack = (function () {
         });
         const compressLabel = createElement('label', {
             htmlFor: 'compress-json-checkbox',
-            textContent: 'Compress JSON'
+            textContent: 'Compress JSON',
+            title: 'Minimizes the size of the JSON file by removing unnecessary whitespace. May make the file harder to read, but reduces file size by up to 60%.'
         });
         const compatibilityModeCheckbox = createElement('input', {
             type: 'checkbox',
@@ -1097,7 +1098,8 @@ var HypoTrack = (function () {
         });
         const compatibilityLabel = createElement('label', {
             htmlFor: 'compatibility-mode-checkbox',
-            textContent: 'Compatibility mode'
+            textContent: 'Compatibility mode',
+            title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).'
         });
         jsonOptionsDiv.appendChild(compressJsonCheckbox);
         jsonOptionsDiv.appendChild(compressLabel);
