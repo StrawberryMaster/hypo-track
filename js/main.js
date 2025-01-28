@@ -1050,6 +1050,19 @@ var HypoTrack = (function () {
             return btn;
         };
 
+        createExportButton('Download Image', () => {
+            const canvas = document.querySelector('#defaultCanvas0');
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            link.download = `hypo-track-${timestamp}.png`;
+
+            canvas.toBlob(function (blob) {
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                URL.revokeObjectURL(link.href);
+            }, 'image/png');
+        });
+
         createExportButton('Export HURDAT', () => {
             const hurdat = exportHURDAT();
             const blob = new Blob([hurdat], { type: 'text/plain' });
@@ -1329,22 +1342,6 @@ var HypoTrack = (function () {
             saveNameTextbox.value = saveName || '';
 
             refreshLoadDropdown();
-        };
-
-        const downloadBtn = document.getElementById('download-btn');
-        downloadBtn.onclick = () => {
-            const canvas = document.querySelector('#defaultCanvas0');
-
-            // create a temporary link
-            const link = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            link.download = `hypo-track-${timestamp}.png`;
-
-            canvas.toBlob(function (blob) {
-                link.href = URL.createObjectURL(blob);
-                link.click();
-                URL.revokeObjectURL(link.href);
-            }, 'image/png');
         };
 
         uicontainer.appendChild(mainFragment);

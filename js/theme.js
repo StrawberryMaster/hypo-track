@@ -28,10 +28,4 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem('theme', theme);
         applyTheme(theme);
     });
-
-    const downloadBtn = document.createElement('button');
-    downloadBtn.id = 'download-btn';
-    downloadBtn.title = 'Download map';
-    downloadBtn.textContent = '💾';
-    document.body.appendChild(downloadBtn);
 });
