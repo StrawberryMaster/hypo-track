@@ -1255,13 +1255,12 @@ var HypoTrack = (function () {
 
         function exportJSON() {
             const result = [];
-
-            tracks.forEach(track => {
+            tracks.forEach((track, trackIndex) => {
                 if (track.length === 0) return;
-
+                const stormName = trackIndex === 0 ? "STORMNAME" : `STORMNAME ${trackIndex + 1}`;
                 track.forEach(point => {
                     result.push({
-                        name: "STORMNAME",
+                        name: stormName,
                         latitude: formatLatLon(point.lat, true),
                         longitude: formatLatLon(point.long, false),
                         speed: getWindSpeed(point.cat),
@@ -1269,7 +1268,6 @@ var HypoTrack = (function () {
                     });
                 });
             });
-
             return result;
         }
 
