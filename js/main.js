@@ -59,10 +59,10 @@ const HypoTrack = (function () {
 
     async function loadImages() {
         const IMAGE_PATHS = new Map([
-            ['nw', '../resources/map_hi-res_NW.webp'],
-            ['ne', '../resources/map_hi-res_NE.webp'],
-            ['sw', '../resources/map_hi-res_SW.webp'],
-            ['se', '../resources/map_hi-res_SE.webp']
+            ['nw', './resources/map_hi-res_NW.webp'],
+            ['ne', './resources/map_hi-res_NE.webp'],
+            ['sw', './resources/map_hi-res_SW.webp'],
+            ['se', './resources/map_hi-res_SE.webp']
         ]);
 
         try {
