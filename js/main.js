@@ -1090,6 +1090,66 @@ var HypoTrack = (function () {
             URL.revokeObjectURL(link.href);
         });
 
+        const fileInput = createElement('input', { type: 'file', accept: 'application/json' });
+        fileInput.style.display = 'none';
+        uicontainer.appendChild(fileInput);
+
+        function parseCoordinate(str) {
+            let value = parseFloat(str);
+            const lastChar = str[str.length - 1].toUpperCase();
+            if (lastChar === 'S' || lastChar === 'W') {
+                value = -value;
+            }
+            return value;
+        }
+
+        function importJSONFile(file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const json = JSON.parse(reader.result);
+                    if (json.tracks && Array.isArray(json.tracks)) {
+                        const speedCategories = [30, 50, 75, 90, 105, 125, 140];
+                        tracks = json.tracks.map(trackData =>
+                            trackData.map(pointData => {
+                                const cat = speedCategories.indexOf(pointData.speed) !== -1
+                                    ? speedCategories.indexOf(pointData.speed)
+                                    : 0;
+                                const type = pointData.stage === 'Extratropical cyclone'
+                                    ? 2
+                                    : (pointData.stage === 'Subtropical cyclone' ? 1 : 0);
+                                return new TrackPoint(
+                                    parseCoordinate(pointData.longitude),
+                                    parseCoordinate(pointData.latitude),
+                                    cat,
+                                    type
+                                );
+                            })
+                        );
+                        Database.save();
+                        History.reset();
+                        deselectTrack();
+                        refreshGUI();
+                    } else {
+                        alert('Invalid JSON format.');
+                    }
+                } catch (error) {
+                    alert('Error importing JSON: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        fileInput.onchange = () => {
+            if (fileInput.files.length > 0) {
+                importJSONFile(fileInput.files[0]);
+                fileInput.value = ""; // reset input after processing
+            }
+        };
+        createExportButton('Import JSON', () => {
+            fileInput.click();
+        });
+
         const jsonOptionsDiv = div();
         jsonOptionsDiv.style.border = 'none';
         jsonOptionsDiv.style.padding = '.2rem 0 0 0';
@@ -1258,6 +1318,7 @@ var HypoTrack = (function () {
             tracks.forEach((track, trackIndex) => {
                 if (track.length === 0) return;
                 const stormName = trackIndex === 0 ? "STORMNAME" : `STORMNAME ${trackIndex + 1}`;
+                const points = [];
                 track.forEach(point => {
                     points.push({
                         name: stormName,
