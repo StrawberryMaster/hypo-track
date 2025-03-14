@@ -172,7 +172,7 @@ ul li {
 
 #undo-redo .btn, #export-container #export-buttons .btn {
 	flex: 1;
-	margin: 0 .5rem;
+	margin: 0 .2rem;
 }
 
 #undo-redo {
