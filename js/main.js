@@ -59,26 +59,41 @@ const HypoTrack = (function () {
 
     async function loadImages() {
         const IMAGE_PATHS = new Map([
-            ['nw', './resources/map_hi-res_NW.webp'],
-            ['ne', './resources/map_hi-res_NE.webp'],
-            ['sw', './resources/map_hi-res_SW.webp'],
-            ['se', './resources/map_hi-res_SE.webp']
+            ['nw', '../resources/map_hi-res_NW.webp'],
+            ['ne', '../resources/map_hi-res_NE.webp'],
+            ['sw', '../resources/map_hi-res_SW.webp'],
+            ['se', '../resources/map_hi-res_SE.webp']
         ]);
 
         try {
-            const loadImage = async (path) => {
-                const img = new Image();
-                img.decoding = 'async';
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = path;
-                });
-                return img;
-            };
+            const worker = new Worker('./js/worker.js');
+
+            const paths = Array.from(IMAGE_PATHS.values());
+            const result = await new Promise((resolve, reject) => {
+                worker.onmessage = ({ data }) => {
+                    if (data.error) {
+                        reject(new Error(data.error));
+                    } else {
+                        resolve(data.imgs);
+                    }
+                };
+                worker.onerror = (error) => reject(error);
+                worker.postMessage({ paths });
+            });
 
             const images = await Promise.all(
-                Array.from(IMAGE_PATHS.values()).map(loadImage)
+                result.map(async (buffer) => {
+                    const blob = new Blob([buffer], { type: 'image/webp' });
+                    const url = URL.createObjectURL(blob);
+                    const img = new Image();
+                    img.decoding = 'async';
+                    await new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        img.src = url;
+                    });
+                    return img;
+                })
             );
 
             Object.assign(mapImgs, Object.fromEntries(
@@ -575,7 +590,7 @@ const HypoTrack = (function () {
         };
     })();
 
-    
+
     const History = (() => {
         let undoItems = [];
         let redoItems = [];
@@ -1026,7 +1041,7 @@ const HypoTrack = (function () {
             createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' }),
             createElement('label', { htmlFor: 'compatibility-mode-checkbox', textContent: 'Compatibility mode', title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).' })
         );
-        
+
         // Save/Load UI //
         const saveloadui = div();
         const saveloadFragment = new DocumentFragment();
