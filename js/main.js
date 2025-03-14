@@ -1254,12 +1254,12 @@ var HypoTrack = (function () {
         }
 
         function exportJSON() {
-            const result = [];
+            const result = { tracks: [] };
             tracks.forEach((track, trackIndex) => {
                 if (track.length === 0) return;
                 const stormName = trackIndex === 0 ? "STORMNAME" : `STORMNAME ${trackIndex + 1}`;
                 track.forEach(point => {
-                    result.push({
+                    points.push({
                         name: stormName,
                         latitude: formatLatLon(point.lat, true),
                         longitude: formatLatLon(point.long, false),
@@ -1267,6 +1267,7 @@ var HypoTrack = (function () {
                         stage: getStageName(point.type, point.cat)
                     });
                 });
+                result.tracks.push(points);
             });
             return result;
         }
