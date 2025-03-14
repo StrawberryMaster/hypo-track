@@ -164,4 +164,4 @@ class VersionManager {
 	}
 }
 
-const versionManager = new VersionManager('version');
+const versionManager = new VersionManager('version', HypoTrack.TITLE + ' v', HypoTrack.VERSION);
