@@ -8,6 +8,137 @@ const HypoTrack = (function () {
     const COLORS_ALT = ['#6ec1ea', '#4dffff', '#ffffd9', '#ffd98c', '#ff9e59', '#ff738a', '#a188fc', '#c0c0c0'];
     const COLORS = ['#5ebaff', '#00faf4', '#ffffcc', '#ffe775', '#ffc140', '#ff8f20', '#ff6060', '#c0c0c0'];
 
+    // QuadTree implementation - for spatial indexing
+    class QuadTree {
+        constructor(bounds, capacity = 4, maxDepth = 5, depth = 0) {
+            this.bounds = bounds; // {x, y, width, height}
+            this.capacity = capacity;
+            this.maxDepth = maxDepth;
+            this.depth = depth;
+            this.points = [];
+            this.divided = false;
+            this.children = null;
+        }
+
+        subdivide() {
+            const x = this.bounds.x;
+            const y = this.bounds.y;
+            const w = this.bounds.width / 2;
+            const h = this.bounds.height / 2;
+            const depth = this.depth + 1;
+
+            const nw = new QuadTree({x: x, y: y, width: w, height: h}, 
+                this.capacity, this.maxDepth, depth);
+            const ne = new QuadTree({x: x + w, y: y, width: w, height: h}, 
+                this.capacity, this.maxDepth, depth);
+            const sw = new QuadTree({x: x, y: y + h, width: w, height: h}, 
+                this.capacity, this.maxDepth, depth);
+            const se = new QuadTree({x: x + w, y: y + h, width: w, height: h}, 
+                this.capacity, this.maxDepth, depth);
+
+            this.children = {nw, ne, sw, se};
+            this.divided = true;
+
+            // redistribute points to children
+            for (const point of this.points) {
+                this.insertToChild(point);
+            }
+            this.points = [];
+        }
+
+        insertToChild(point) {
+            if (this.children.nw.contains(point)) this.children.nw.insert(point);
+            else if (this.children.ne.contains(point)) this.children.ne.insert(point);
+            else if (this.children.sw.contains(point)) this.children.sw.insert(point);
+            else if (this.children.se.contains(point)) this.children.se.insert(point);
+        }
+
+        insert(point) {
+            if (!this.contains(point)) {
+                return false;
+            }
+
+            if (!this.divided) {
+                if (this.points.length < this.capacity || this.depth >= this.maxDepth) {
+                    this.points.push(point);
+                    return true;
+                } else {
+                    this.subdivide();
+                }
+            }
+
+            if (this.divided) {
+                return this.insertToChild(point);
+            }
+        }
+
+        query(range, found = []) {
+            if (!this.intersects(range)) {
+                return found;
+            }
+
+            for (const point of this.points) {
+                if (range.contains(point)) {
+                    found.push(point);
+                }
+            }
+
+            if (this.divided) {
+                this.children.nw.query(range, found);
+                this.children.ne.query(range, found);
+                this.children.sw.query(range, found);
+                this.children.se.query(range, found);
+            }
+
+            return found;
+        }
+
+        clear() {
+            this.points = [];
+            if (this.divided) {
+                this.children.nw.clear();
+                this.children.ne.clear();
+                this.children.sw.clear();
+                this.children.se.clear();
+                this.divided = false;
+                this.children = null;
+            }
+        }
+
+        contains(point) {
+            return point.screenX >= this.bounds.x && 
+                   point.screenX <= this.bounds.x + this.bounds.width &&
+                   point.screenY >= this.bounds.y && 
+                   point.screenY <= this.bounds.y + this.bounds.height;
+        }
+
+        intersects(range) {
+            return !(range.x > this.bounds.x + this.bounds.width ||
+                   range.x + range.width < this.bounds.x ||
+                   range.y > this.bounds.y + this.bounds.height ||
+                   range.y + range.height < this.bounds.y);
+        }
+    }
+
+    // Circle range for point queries
+    class CircleRange {
+        constructor(x, y, radius) {
+            this.x = x - radius;
+            this.y = y - radius;
+            this.width = radius * 2;
+            this.height = radius * 2;
+            this.centerX = x;
+            this.centerY = y;
+            this.radius = radius;
+        }
+
+        contains(point) {
+            // if the point is within the circle's radius
+            const distance = Math.hypot(point.screenX - this.centerX, point.screenY - this.centerY);
+            return distance <= this.radius;
+        }
+    }
+
     // state variables
     let canvas, ctx, mapImgs = {}, customMapImg = null, useCustomMap = false,
         currentMapName = 'Default', panLocation, zoomAmt = 0, tracks = [],
@@ -16,6 +147,10 @@ const HypoTrack = (function () {
         useSmallDots = false, saveName, autosave = true, saveLoadReady = true,
         isDragging = false, beginClickX, beginClickY, beginPanX, beginPanY,
         beginPointMoveLong, beginPointMoveLat, mouseMode, loadedMapImg = false;
+
+    // spatial index for tracks
+    let spatialIndex = null;
+    let needsIndexRebuild = true;
 
     // redraw control variables
     let needsRedraw = true, isRedrawScheduled = false;
@@ -65,6 +200,9 @@ const HypoTrack = (function () {
         }).catch(err => console.error('Jinkies! Failed to load images:', err));
 
         setupEventListeners();
+
+        // Initialize spatial index
+        spatialIndex = new QuadTree({x: 0, y: 0, width: WIDTH, height: HEIGHT});
     }
 
     function requestRedraw() {
@@ -169,6 +307,8 @@ const HypoTrack = (function () {
 
         drawMap(viewW, viewH);
         drawTracks(viewW, viewH);
+        
+        updateHoverState();
     }
 
     function drawMap() {
@@ -243,6 +383,58 @@ const HypoTrack = (function () {
         }
     }
 
+    function buildSpatialIndex() {
+        if (!needsIndexRebuild) return;
+        
+        spatialIndex.clear();
+        
+        const viewWidth = mapViewWidth();
+        const viewHeight = mapViewHeight();
+        
+        for (let i = 0; i < tracks.length; i++) {
+            const track = tracks[i];
+            for (let j = 0; j < track.length; j++) {
+                const point = track[j];
+                const screenCoords = longLatToScreenCoords(point);
+                
+                if (screenCoords.inBounds) {
+                    const indexPoint = {
+                        screenX: screenCoords.x,
+                        screenY: screenCoords.y,
+                        point: point,
+                        track: track
+                    };
+                    
+                    spatialIndex.insert(indexPoint);
+                }
+                
+                const worldWidth = WIDTH * zoomMult();
+                
+                const leftPoint = {
+                    screenX: screenCoords.x - worldWidth,
+                    screenY: screenCoords.y,
+                    point: point,
+                    track: track
+                };
+                if (leftPoint.screenX > -100 && leftPoint.screenX < WIDTH + 100) {
+                    spatialIndex.insert(leftPoint);
+                }
+                
+                const rightPoint = {
+                    screenX: screenCoords.x + worldWidth,
+                    screenY: screenCoords.y,
+                    point: point,
+                    track: track
+                };
+                if (rightPoint.screenX > -100 && rightPoint.screenX < WIDTH + 100) {
+                    spatialIndex.insert(rightPoint);
+                }
+            }
+        }
+        
+        needsIndexRebuild = false;
+    }
+
     function drawTracks() {
         let dotSize = 2 * Math.pow(ZOOM_BASE, zoomAmt);
         ctx.lineWidth = dotSize / 9;
@@ -250,6 +442,9 @@ const HypoTrack = (function () {
         const worldWidth = WIDTH * zoomMult();
         const viewWidth = mapViewWidth();
         const viewHeight = mapViewHeight();
+
+        // mark the spatial index for rebuild
+        needsIndexRebuild = true;
 
         // our pool of reusable objects
         const coordsPool = [];
@@ -483,6 +678,9 @@ const HypoTrack = (function () {
         selectedDot = new TrackPoint(mouseLong(evt), mouseLat(evt), categoryToPlace, typeToPlace);
         selectedTrack.splice(insertIndex, 0, selectedDot);
 
+        // mark spatial index for rebuild
+        needsIndexRebuild = true;
+
         History.record(History.ActionTypes.addPoint, {
             trackIndex: tracks.indexOf(selectedTrack),
             pointIndex: insertIndex,
@@ -503,6 +701,10 @@ const HypoTrack = (function () {
         }
         selectedDot.long = mouseLong(evt);
         selectedDot.lat = mouseLat(evt);
+        
+        // mark spatial index for rebuild
+        needsIndexRebuild = true;
+        
         const trackIndex = tracks.indexOf(selectedTrack);
         if (trackIndex === -1 || !selectedTrack) {
             console.error('Invalid track in handleMovePoint', { selectedTrack, tracks });
@@ -522,18 +724,40 @@ const HypoTrack = (function () {
     }
 
     function handleDeletePoint(evt) {
-        for (let i = tracks.length - 1; i >= 0; i--) {
-            const track = tracks[i];
-            for (let j = track.length - 1; j >= 0; j--) {
-                const point = track[j];
-                const coords = longLatToScreenCoords(point);
-                if (coords.inBounds && Math.hypot(coords.x - evt.offsetX, coords.y - evt.offsetY) < Math.pow(ZOOM_BASE, zoomAmt)) {
-                    const trackDeleted = handlePointDeletion(i, j, point);
-                    if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
-                    return;
+        // build spatial index before querying
+        buildSpatialIndex();
+        
+        // create a circular search range
+        const searchRadius = Math.pow(ZOOM_BASE, zoomAmt);
+        const searchRange = new CircleRange(evt.offsetX, evt.offsetY, searchRadius);
+        
+        // query the spatial index for points in range
+        const candidatePoints = spatialIndex.query(searchRange);
+        
+        if (candidatePoints.length > 0) {
+            // find the nearest point
+            let nearestPoint = candidatePoints[0];
+            let minDistance = Math.hypot(nearestPoint.screenX - evt.offsetX, nearestPoint.screenY - evt.offsetY);
+            
+            for (let i = 1; i < candidatePoints.length; i++) {
+                const distance = Math.hypot(candidatePoints[i].screenX - evt.offsetX, candidatePoints[i].screenY - evt.offsetY);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestPoint = candidatePoints[i];
                 }
             }
+            
+            // get the track and point indexes
+            const trackIndex = tracks.indexOf(nearestPoint.track);
+            const pointIndex = nearestPoint.track.indexOf(nearestPoint.point);
+            
+            if (trackIndex !== -1 && pointIndex !== -1) {
+                const trackDeleted = handlePointDeletion(trackIndex, pointIndex, nearestPoint.point);
+                if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
+                return;
+            }
         }
+        
         requestRedraw();
     }
 
@@ -650,6 +874,9 @@ const HypoTrack = (function () {
                 await withLock(async () => {
                     tracks = (await db.saves.get(getKey())) || [];
                     tracks.forEach(track => track.forEach((point, i) => track[i] = Object.assign(new TrackPoint(), point)));
+                    
+                    // mark spatial index for rebuild
+                    needsIndexRebuild = true;
                 });
             },
             list: () => db.saves.toCollection().primaryKeys(),
@@ -714,6 +941,10 @@ const HypoTrack = (function () {
 
             redoItems.push(action);
             if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
+            
+            // mark spatial index for rebuild
+            needsIndexRebuild = true;
+            
             requestRedraw();
         }
 
@@ -753,6 +984,10 @@ const HypoTrack = (function () {
 
             undoItems.push(action);
             if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
+            
+            // mark spatial index for rebuild
+            needsIndexRebuild = true;
+            
             requestRedraw();
         }
 
