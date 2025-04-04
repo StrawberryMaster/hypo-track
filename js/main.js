@@ -1454,21 +1454,24 @@ const HypoTrack = (function () {
                 alert('One does not simply delete the default map.');
                 return;
             }
-
+        
             if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
                 try {
                     await Database.deleteMap(currentMapName);
                     alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
+        
+                    customMapImg = null;
                     currentMapName = 'Default';
                     useCustomMap = false;
                     customMapCheckbox.checked = false;
-                    refreshMapDropdown();
-                    loadImages().then(() => {
-                        loadedMapImg = true;
-                        requestRedraw();
-                    });
+        
+                    await refreshMapDropdown();
+                    await loadImages();
+                    loadedMapImg = true;
+                    requestRedraw();
                 } catch (error) {
                     alert(`Well, this is awkward. Error deleting map: ${error.message}`);
+                    console.error('Delete map error:', error);
                 }
             }
         };
@@ -1482,9 +1485,11 @@ const HypoTrack = (function () {
                 const dropdownFragment = new DocumentFragment();
                 options.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
                 mapDropdown.replaceChildren(dropdownFragment);
-                mapDropdown.value = currentMapName;
+                mapDropdown.value = currentMapName || 'Default';
             } catch (error) {
                 console.error('Oops. Failed to refresh map dropdown:', error);
+                mapDropdown.replaceChildren(dropdownOption('Default'));
+                mapDropdown.value = 'Default';
             }
         }
 
