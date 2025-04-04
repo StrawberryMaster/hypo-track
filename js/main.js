@@ -201,7 +201,7 @@ const HypoTrack = (function () {
 
         setupEventListeners();
 
-        // Initialize spatial index
+        // initialize spatial index
         spatialIndex = new QuadTree({x: 0, y: 0, width: WIDTH, height: HEIGHT});
     }
 
@@ -223,8 +223,14 @@ const HypoTrack = (function () {
                     customMapImg = new Image();
                     customMapImg.decoding = 'async';
                     await new Promise((resolve, reject) => {
-                        customMapImg.onload = resolve;
-                        customMapImg.onerror = reject;
+                        customMapImg.onload = () => {
+                            URL.revokeObjectURL(url);
+                            resolve();
+                        };
+                        customMapImg.onerror = (err) => {
+                            URL.revokeObjectURL(url);
+                            reject(err);
+                        };
                         customMapImg.src = url;
                     });
                     loadedMapImg = true;
@@ -259,10 +265,12 @@ const HypoTrack = (function () {
                 worker.postMessage({ paths });
             });
 
+            const urls = [];
             const images = await Promise.all(
                 result.map(async (buffer) => {
                     const blob = new Blob([buffer], { type: 'image/webp' });
                     const url = URL.createObjectURL(blob);
+                    urls.push(url);
                     const img = new Image();
                     img.decoding = 'async';
                     await new Promise((resolve, reject) => {
@@ -273,6 +281,9 @@ const HypoTrack = (function () {
                     return img;
                 })
             );
+
+            // revoke URLs after all images are loaded
+            urls.forEach(url => URL.revokeObjectURL(url));
 
             Object.assign(mapImgs, Object.fromEntries(
                 Array.from(IMAGE_PATHS.keys()).map((key, i) => [key, images[i]])
