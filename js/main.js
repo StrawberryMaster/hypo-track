@@ -27,16 +27,16 @@ const HypoTrack = (function () {
             const h = this.bounds.height / 2;
             const depth = this.depth + 1;
 
-            const nw = new QuadTree({x: x, y: y, width: w, height: h}, 
+            const nw = new QuadTree({ x: x, y: y, width: w, height: h },
                 this.capacity, this.maxDepth, depth);
-            const ne = new QuadTree({x: x + w, y: y, width: w, height: h}, 
+            const ne = new QuadTree({ x: x + w, y: y, width: w, height: h },
                 this.capacity, this.maxDepth, depth);
-            const sw = new QuadTree({x: x, y: y + h, width: w, height: h}, 
+            const sw = new QuadTree({ x: x, y: y + h, width: w, height: h },
                 this.capacity, this.maxDepth, depth);
-            const se = new QuadTree({x: x + w, y: y + h, width: w, height: h}, 
+            const se = new QuadTree({ x: x + w, y: y + h, width: w, height: h },
                 this.capacity, this.maxDepth, depth);
 
-            this.children = {nw, ne, sw, se};
+            this.children = { nw, ne, sw, se };
             this.divided = true;
 
             // redistribute points to children
@@ -106,17 +106,17 @@ const HypoTrack = (function () {
         }
 
         contains(point) {
-            return point.screenX >= this.bounds.x && 
-                   point.screenX <= this.bounds.x + this.bounds.width &&
-                   point.screenY >= this.bounds.y && 
-                   point.screenY <= this.bounds.y + this.bounds.height;
+            return point.screenX >= this.bounds.x &&
+                point.screenX <= this.bounds.x + this.bounds.width &&
+                point.screenY >= this.bounds.y &&
+                point.screenY <= this.bounds.y + this.bounds.height;
         }
 
         intersects(range) {
             return !(range.x > this.bounds.x + this.bounds.width ||
-                   range.x + range.width < this.bounds.x ||
-                   range.y > this.bounds.y + this.bounds.height ||
-                   range.y + range.height < this.bounds.y);
+                range.x + range.width < this.bounds.x ||
+                range.y > this.bounds.y + this.bounds.height ||
+                range.y + range.height < this.bounds.y);
         }
     }
 
@@ -202,7 +202,7 @@ const HypoTrack = (function () {
         setupEventListeners();
 
         // initialize spatial index
-        spatialIndex = new QuadTree({x: 0, y: 0, width: WIDTH, height: HEIGHT});
+        spatialIndex = new QuadTree({ x: 0, y: 0, width: WIDTH, height: HEIGHT });
     }
 
     function requestRedraw() {
@@ -318,34 +318,9 @@ const HypoTrack = (function () {
 
         drawMap(viewW, viewH);
         drawTracks(viewW, viewH);
-        
-        updateHoverState();
     }
 
     function drawMap() {
-        if (useCustomMap && customMapImg) {
-            const topBound = HEIGHT - WIDTH / 2;
-            const mvw = mapViewWidth();
-            const mvh = mapViewHeight();
-            const west = panLocation.long;
-            const east = west + mvw;
-            const north = panLocation.lat;
-            const south = north - mvh;
-
-            const sourceX = (west + 180) / 360 * customMapImg.width;
-            const sourceWidth = mvw / 360 * customMapImg.width;
-            const sourceY = (90 - north) / 180 * customMapImg.height;
-            const sourceHeight = mvh / 180 * customMapImg.height;
-
-            ctx.drawImage(
-                customMapImg,
-                sourceX, sourceY, sourceWidth, sourceHeight,
-                0, topBound, WIDTH, HEIGHT - topBound
-            );
-
-            return;
-        }
-
         const topBound = HEIGHT - WIDTH / 2;
         const mvw = mapViewWidth();
         const mvh = mapViewHeight();
@@ -354,20 +329,65 @@ const HypoTrack = (function () {
         const north = panLocation.lat;
         const south = north - mvh;
 
-        function drawSection(img, mw, me, mn, ms, qw, qe, qn, qs) {
-            const sx = img.width * Math.max(0, Math.min(1, (qw - mw) / (me - mw)));
-            const sy = img.height * Math.max(0, Math.min(1, (qn - mn) / (ms - mn)));
-            const sw = img.width * ((qe - qw) / (me - mw));
-            const sh = img.height * ((qs - qn) / (ms - mn));
-            const dx = WIDTH * (qw - west) / mvw;
-            const dy = (HEIGHT - topBound) * (qn - north) / (south - north) + topBound;
-            const dw = WIDTH * (qe - qw) / mvw;
-            const dh = (HEIGHT - topBound) * (qs - qn) / (south - north);
+        function drawSection(img, mw, me, mn, ms, qw, qe, qn, qs, offset = 0) {
+            let sx = img.width * Math.max(0, Math.min(1, (qw - mw - offset) / (me - mw)));
+            let sw = img.width * Math.max(0, Math.min(1, (qe - mw - offset) / (me - mw))) - sx;
+            let sy = img.height * Math.max(0, Math.min(1, (qn - mn) / (ms - mn)));
+            let sh = img.height * Math.max(0, Math.min(1, (qs - mn) / (ms - mn))) - sy;
 
-            // 1 pixel overlap to avoid white outlines
-            // is probably a lazy fix. Probably won't be necessary if we just use one single map?
+            sw = Math.max(1, sw);
+            sh = Math.max(1, sh);
+
+            let dx = WIDTH * (qw - west) / mvw;
+            let dw = WIDTH * (qe - qw) / mvw;
+            let dy = (HEIGHT - topBound) * (qn - north) / (south - north) + topBound;
+            let dh = (HEIGHT - topBound) * (qs - qn) / (south - north);
+
+            const roundedDx = Math.round(dx);
+            const roundedDy = Math.round(dy);
+            let roundedDw = Math.round(dx + dw) - roundedDx;
+            let roundedDh = Math.round(dy + dh) - roundedDy;
+
+            const scaleX = sw / dw;
+            const scaleY = sh / dh;
+            sw = roundedDw * scaleX;
+            sh = roundedDh * scaleY;
+
             const overlap = 1;
-            ctx.drawImage(img, sx, sy, Math.max(0, sw - overlap), Math.max(0, sh - overlap), dx, dy, dw, dh);
+            if (dw > 0 && dh > 0) {
+                roundedDw += overlap;
+                roundedDh += overlap;
+                sw += overlap * scaleX;
+                sh += overlap * scaleY;
+            }
+
+            if (sw > 0 && sh > 0 && roundedDx + roundedDw > 0 && roundedDx < WIDTH) {
+                ctx.drawImage(img, sx, sy, sw, sh, roundedDx, roundedDy, roundedDw, roundedDh);
+            }
+        }
+
+        if (useCustomMap && customMapImg) {
+            const mapWest = -180;
+            const mapEast = 180;
+            const mapNorth = 90;
+            const mapSouth = -90;
+
+            const minLong = Math.floor((west - mvw) / 360) * 360;
+            const maxLong = Math.ceil((east + mvw) / 360) * 360;
+
+            for (let offset = minLong; offset < maxLong; offset += 360) {
+                const qw = Math.max(west, mapWest + offset);
+                const qe = Math.min(east, mapEast + offset);
+                if (qw < qe) {
+                    drawSection(
+                        customMapImg,
+                        mapWest, mapEast, mapNorth, mapSouth,
+                        qw, qe, north, south,
+                        offset
+                    );
+                }
+            }
+            return;
         }
 
         const northGtZero = north > 0;
@@ -385,29 +405,29 @@ const HypoTrack = (function () {
             if (southLtZero) drawSection(mapImgs.se, 0, 180, 0, -90, maxWestZero, Math.min(east, 180), minNorthZero, south);
         }
         if (east > 180) {
-            if (northGtZero) drawSection(mapImgs.nw, 180, 360, 90, 0, 180, Math.min(east, 360), north, maxSouthZero);
-            if (southLtZero) drawSection(mapImgs.sw, 180, 360, 0, -90, 180, Math.min(east, 360), minNorthZero, south);
+            if (northGtZero) drawSection(mapImgs.nw, -180, 0, 90, 0, 180, Math.min(east, 360), north, maxSouthZero, 360);
+            if (southLtZero) drawSection(mapImgs.sw, -180, 0, 0, -90, 180, Math.min(east, 360), minNorthZero, south, 360);
         }
         if (east > 360) {
-            if (northGtZero) drawSection(mapImgs.ne, 360, 540, 90, 0, 360, east, north, maxSouthZero);
-            if (southLtZero) drawSection(mapImgs.se, 360, 540, 0, -90, 360, east, minNorthZero, south);
+            if (northGtZero) drawSection(mapImgs.ne, 0, 180, 90, 0, 360, east, north, maxSouthZero, 360);
+            if (southLtZero) drawSection(mapImgs.se, 0, 180, 0, -90, 360, east, minNorthZero, south, 360);
         }
     }
 
     function buildSpatialIndex() {
         if (!needsIndexRebuild) return;
-        
+
         spatialIndex.clear();
-        
+
         const viewWidth = mapViewWidth();
         const viewHeight = mapViewHeight();
-        
+
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             for (let j = 0; j < track.length; j++) {
                 const point = track[j];
                 const screenCoords = longLatToScreenCoords(point);
-                
+
                 if (screenCoords.inBounds) {
                     const indexPoint = {
                         screenX: screenCoords.x,
@@ -415,12 +435,12 @@ const HypoTrack = (function () {
                         point: point,
                         track: track
                     };
-                    
+
                     spatialIndex.insert(indexPoint);
                 }
-                
+
                 const worldWidth = WIDTH * zoomMult();
-                
+
                 const leftPoint = {
                     screenX: screenCoords.x - worldWidth,
                     screenY: screenCoords.y,
@@ -430,7 +450,7 @@ const HypoTrack = (function () {
                 if (leftPoint.screenX > -100 && leftPoint.screenX < WIDTH + 100) {
                     spatialIndex.insert(leftPoint);
                 }
-                
+
                 const rightPoint = {
                     screenX: screenCoords.x + worldWidth,
                     screenY: screenCoords.y,
@@ -442,7 +462,7 @@ const HypoTrack = (function () {
                 }
             }
         }
-        
+
         needsIndexRebuild = false;
     }
 
@@ -712,10 +732,10 @@ const HypoTrack = (function () {
         }
         selectedDot.long = mouseLong(evt);
         selectedDot.lat = mouseLat(evt);
-        
+
         // mark spatial index for rebuild
         needsIndexRebuild = true;
-        
+
         const trackIndex = tracks.indexOf(selectedTrack);
         if (trackIndex === -1 || !selectedTrack) {
             console.error('Invalid track in handleMovePoint', { selectedTrack, tracks });
@@ -737,19 +757,19 @@ const HypoTrack = (function () {
     function handleDeletePoint(evt) {
         // build spatial index before querying
         buildSpatialIndex();
-        
+
         // create a circular search range
         const searchRadius = Math.pow(ZOOM_BASE, zoomAmt);
         const searchRange = new CircleRange(evt.offsetX, evt.offsetY, searchRadius);
-        
+
         // query the spatial index for points in range
         const candidatePoints = spatialIndex.query(searchRange);
-        
+
         if (candidatePoints.length > 0) {
             // find the nearest point
             let nearestPoint = candidatePoints[0];
             let minDistance = Math.hypot(nearestPoint.screenX - evt.offsetX, nearestPoint.screenY - evt.offsetY);
-            
+
             for (let i = 1; i < candidatePoints.length; i++) {
                 const distance = Math.hypot(candidatePoints[i].screenX - evt.offsetX, candidatePoints[i].screenY - evt.offsetY);
                 if (distance < minDistance) {
@@ -757,18 +777,18 @@ const HypoTrack = (function () {
                     nearestPoint = candidatePoints[i];
                 }
             }
-            
+
             // get the track and point indexes
             const trackIndex = tracks.indexOf(nearestPoint.track);
             const pointIndex = nearestPoint.track.indexOf(nearestPoint.point);
-            
+
             if (trackIndex !== -1 && pointIndex !== -1) {
                 const trackDeleted = handlePointDeletion(trackIndex, pointIndex, nearestPoint.point);
                 if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
                 return;
             }
         }
-        
+
         requestRedraw();
     }
 
@@ -885,7 +905,7 @@ const HypoTrack = (function () {
                 await withLock(async () => {
                     tracks = (await db.saves.get(getKey())) || [];
                     tracks.forEach(track => track.forEach((point, i) => track[i] = Object.assign(new TrackPoint(), point)));
-                    
+
                     // mark spatial index for rebuild
                     needsIndexRebuild = true;
                 });
@@ -952,10 +972,10 @@ const HypoTrack = (function () {
 
             redoItems.push(action);
             if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
-            
+
             // mark spatial index for rebuild
             needsIndexRebuild = true;
-            
+
             requestRedraw();
         }
 
@@ -995,10 +1015,10 @@ const HypoTrack = (function () {
 
             undoItems.push(action);
             if (autosave) tracks.length === 0 ? Database.delete() : Database.save();
-            
+
             // mark spatial index for rebuild
             needsIndexRebuild = true;
-            
+
             requestRedraw();
         }
 
@@ -1454,17 +1474,17 @@ const HypoTrack = (function () {
                 alert('One does not simply delete the default map.');
                 return;
             }
-        
+
             if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
                 try {
                     await Database.deleteMap(currentMapName);
                     alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
-        
+
                     customMapImg = null;
                     currentMapName = 'Default';
                     useCustomMap = false;
                     customMapCheckbox.checked = false;
-        
+
                     await refreshMapDropdown();
                     await loadImages();
                     loadedMapImg = true;
