@@ -1,6 +1,6 @@
 const HypoTrack = (function () {
     const TITLE = 'HypoTrack';
-    const VERSION = '1.0.0';
+    const VERSION = '1.0.1';
     const IDB_KEY = 'hypo-track';
 
     const WIDTH = 1000;
@@ -9,7 +9,8 @@ const HypoTrack = (function () {
     const COLORS = ['#5ebaff', '#00faf4', '#ffffcc', '#ffe775', '#ffc140', '#ff8f20', '#ff6060', '#c0c0c0'];
 
     // state variables
-    let canvas, ctx, mapImgs = {}, panLocation, zoomAmt = 0, tracks = [],
+    let canvas, ctx, mapImgs = {}, customMapImg = null, useCustomMap = false,
+        currentMapName = 'Default', panLocation, zoomAmt = 0, tracks = [],
         categoryToPlace = 0, typeToPlace = 0, hoverDot, hoverTrack, selectedDot, selectedTrack,
         hideNonSelectedTracks = false, deleteTrackPoints = false, useAltColors = false,
         useSmallDots = false, saveName, autosave = true, saveLoadReady = true,
@@ -25,6 +26,23 @@ const HypoTrack = (function () {
     const VIEW_HEIGHT_RATIO = 0.5;
 
     function init() {
+        // update database version if necessary
+        if (Dexie.getDatabaseNames) {
+            Dexie.getDatabaseNames().then(names => {
+                if (names.includes(IDB_KEY)) {
+                    const tempDb = new Dexie(IDB_KEY);
+                    tempDb.version(1).stores({ saves: '' });
+                    tempDb.open().then(() => {
+                        tempDb.close();
+                        const db = new Dexie(IDB_KEY);
+                        db.version(2).stores({ saves: '', maps: '' });
+                    }).catch(() => {
+                        console.log('Database already updated to version 2');
+                    });
+                }
+            }).catch(err => console.error('Error checking database version:', err));
+        }
+
         document.title = TITLE;
         canvas = document.createElement('canvas');
         canvas.width = WIDTH;
@@ -58,6 +76,28 @@ const HypoTrack = (function () {
     }
 
     async function loadImages() {
+        if (useCustomMap && currentMapName !== 'Default') {
+            try {
+                const mapData = await Database.loadMap(currentMapName);
+                if (mapData) {
+                    const blob = new Blob([mapData], { type: 'image/jpeg' });
+                    const url = URL.createObjectURL(blob);
+                    customMapImg = new Image();
+                    customMapImg.decoding = 'async';
+                    await new Promise((resolve, reject) => {
+                        customMapImg.onload = resolve;
+                        customMapImg.onerror = reject;
+                        customMapImg.src = url;
+                    });
+                    loadedMapImg = true;
+                    return;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar mapa personalizado:', error);
+                useCustomMap = false;
+            }
+        }
+
         const IMAGE_PATHS = new Map([
             ['nw', '../resources/map_hi-res_NW.webp'],
             ['ne', '../resources/map_hi-res_NE.webp'],
@@ -132,6 +172,29 @@ const HypoTrack = (function () {
     }
 
     function drawMap() {
+        if (useCustomMap && customMapImg) {
+            const topBound = HEIGHT - WIDTH / 2;
+            const mvw = mapViewWidth();
+            const mvh = mapViewHeight();
+            const west = panLocation.long;
+            const east = west + mvw;
+            const north = panLocation.lat;
+            const south = north - mvh;
+
+            const sourceX = (west + 180) / 360 * customMapImg.width;
+            const sourceWidth = mvw / 360 * customMapImg.width;
+            const sourceY = (90 - north) / 180 * customMapImg.height;
+            const sourceHeight = mvh / 180 * customMapImg.height;
+
+            ctx.drawImage(
+                customMapImg,
+                sourceX, sourceY, sourceWidth, sourceHeight,
+                0, topBound, WIDTH, HEIGHT - topBound
+            );
+
+            return;
+        }
+
         const topBound = HEIGHT - WIDTH / 2;
         const mvw = mapViewWidth();
         const mvh = mapViewHeight();
@@ -553,7 +616,11 @@ const HypoTrack = (function () {
 
     const Database = (() => {
         const db = new Dexie(IDB_KEY);
-        db.version(1).stores({ saves: '' });
+        db.version(2).stores({
+            saves: '',
+            maps: ''
+        });
+
         let lastSave = 0;
         const SAVE_DELAY = 2000;
 
@@ -586,7 +653,16 @@ const HypoTrack = (function () {
                 });
             },
             list: () => db.saves.toCollection().primaryKeys(),
-            delete: async () => await withLock(() => db.saves.delete(getKey()))
+            delete: async () => await withLock(() => db.saves.delete(getKey())),
+
+            saveMap: async (name, imageData) => {
+                await withLock(() => db.maps.put(imageData, name));
+            },
+            loadMap: async (name) => {
+                return await db.maps.get(name);
+            },
+            listMaps: () => db.maps.toCollection().primaryKeys(),
+            deleteMap: async (name) => await withLock(() => db.maps.delete(name))
         };
     })();
 
@@ -1054,6 +1130,118 @@ const HypoTrack = (function () {
         newSeasonButton.style.marginTop = '1rem';
         saveloadui.appendChild(saveloadFragment);
 
+        // Custom maps UI //
+        const mapsContainer = div();
+        mapsContainer.id = "maps-container";
+        mainFragment.appendChild(mapsContainer);
+
+        const mapsTitle = createElement('h3', { textContent: 'Custom maps' });
+        mapsTitle.style.margin = '.2rem 0 .5rem 0';
+        mapsContainer.appendChild(mapsTitle);
+
+        const mapsFragment = new DocumentFragment();
+        const customMapCheckbox = checkbox('use-custom-map-checkbox', 'Use custom map', mapsFragment);
+        customMapCheckbox.onchange = () => {
+            useCustomMap = customMapCheckbox.checked;
+            loadImages().then(() => {
+                loadedMapImg = true;
+                requestRedraw();
+            }).catch(err => console.error('Zoinks! Failed to load images:', err));
+        };
+
+        const mapDropdown = dropdown('custom-map-dropdown', 'Select map:', {}, mapsFragment);
+        mapDropdown.onchange = () => {
+            if (mapDropdown.value) {
+                currentMapName = mapDropdown.value;
+                if (useCustomMap) {
+                    loadImages().then(() => {
+                        loadedMapImg = true;
+                        requestRedraw();
+                    }).catch(err => console.error('Yikes! Failed to load images:', err));
+                }
+            }
+        };
+
+        const uploadMapButton = button('Upload map', mapsFragment);
+        uploadMapButton.onclick = () => {
+            const fileInput = createElement('input', { type: 'file', accept: 'image/*' });
+            fileInput.style.display = 'none';
+            fileInput.onchange = () => {
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    const mapNamePrompt = prompt('Select a name for the map (4-32 characters, letters, numbers, spaces, _ or -):', currentMapName);
+                    const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
+
+                    if (mapNamePrompt && MAP_NAME_REGEX.test(mapNamePrompt)) {
+                        const reader = new FileReader();
+                        reader.onload = async () => {
+                            try {
+                                await Database.saveMap(mapNamePrompt, new Uint8Array(reader.result));
+                                alert(`Map "${mapNamePrompt}" saved successfully.`);
+                                refreshMapDropdown();
+                                currentMapName = mapNamePrompt;
+                                useCustomMap = true;
+                                customMapCheckbox.checked = true;
+                                loadImages().then(() => {
+                                    loadedMapImg = true;
+                                    requestRedraw();
+                                });
+                            } catch (error) {
+                                alert(`Jinkies! Error saving map: ${error.message}`);
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        alert('Invalid map name. Please use 4-32 characters, letters, numbers, spaces, _ or -.');
+                    }
+                    fileInput.value = "";
+                }
+            };
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            document.body.removeChild(fileInput);
+        };
+
+        const deleteMapButton = button('Delete map', mapsFragment);
+        deleteMapButton.onclick = async () => {
+            if (currentMapName === 'Default') {
+                alert('One does not simply delete the default map.');
+                return;
+            }
+
+            if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
+                try {
+                    await Database.deleteMap(currentMapName);
+                    alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
+                    currentMapName = 'Default';
+                    useCustomMap = false;
+                    customMapCheckbox.checked = false;
+                    refreshMapDropdown();
+                    loadImages().then(() => {
+                        loadedMapImg = true;
+                        requestRedraw();
+                    });
+                } catch (error) {
+                    alert(`Well, this is awkward. Error deleting map: ${error.message}`);
+                }
+            }
+        };
+
+        mapsContainer.appendChild(mapsFragment);
+
+        async function refreshMapDropdown() {
+            try {
+                const mapList = await Database.listMaps();
+                const options = ['Default', ...mapList];
+                const dropdownFragment = new DocumentFragment();
+                options.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
+                mapDropdown.replaceChildren(dropdownFragment);
+                mapDropdown.value = currentMapName;
+            } catch (error) {
+                console.error('Oops. Failed to refresh map dropdown:', error);
+            }
+        }
+
         saveNameTextbox.maxLength = 32;
         const SAVE_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
 
@@ -1105,6 +1293,7 @@ const HypoTrack = (function () {
             saveButton.disabled = loadDropdown.disabled = newSeasonButton.disabled = !saveLoadReady;
             saveNameTextbox.value = saveName || '';
             refreshLoadDropdown();
+            refreshMapDropdown();
             requestRedraw();
         };
 
