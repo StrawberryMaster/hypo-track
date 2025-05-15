@@ -1120,14 +1120,14 @@ const HypoTrack = (function () {
         return padded;
     }
 
-    function formatLatLon(val, isLat) {
+    function formatLatLon(val, isLat, decimalPlaces = 1) {
         let adjustedVal = isLat ? val : normalizeLongitude(val);
         const absVal = Math.abs(adjustedVal);
         const hemisphere = isLat ? (adjustedVal >= 0 ? 'N' : 'S') : (adjustedVal >= 0 ? 'E' : 'W');
-        return absVal.toFixed(1) + hemisphere;
+        return absVal.toFixed(decimalPlaces) + hemisphere;
     }
 
-    function exportHURDAT() {
+    function exportHURDAT(decimalPlaces = 1) {
         const year = new Date().getFullYear();
         const parts = [];
         const compatibilityMode = document.getElementById('compatibility-mode-checkbox')?.checked || false;
@@ -1147,8 +1147,8 @@ const HypoTrack = (function () {
                     padNumber(dayOfMonth, 2),
                     timeOfDay,
                     getTypeCode(point.type, point.cat),
-                    formatLatLon(point.lat, true).padStart(5),
-                    formatLatLon(point.long, false).padStart(6),
+                    formatLatLon(point.lat, true, decimalPlaces).padStart(5),
+                    formatLatLon(point.long, false, decimalPlaces).padStart(6),
                     String(getWindSpeed(point.cat)).padStart(3),
                     getPressure(point.cat)
                 );
@@ -1172,15 +1172,15 @@ const HypoTrack = (function () {
         return STAGE_NAMES[getTypeCode(type, cat)];
     }
 
-    function exportJSON() {
+    function exportJSON(decimalPlaces = 1) {
         const result = { tracks: [] };
         tracks.forEach((track, trackIndex) => {
             if (track.length === 0) return;
             const stormName = trackIndex === 0 ? "STORMNAME" : `STORMNAME ${trackIndex + 1}`;
             result.tracks.push(track.map(point => ({
                 name: stormName,
-                latitude: formatLatLon(point.lat, true),
-                longitude: formatLatLon(point.long, false),
+                latitude: formatLatLon(point.lat, true, decimalPlaces),
+                longitude: formatLatLon(point.long, false, decimalPlaces),
                 speed: getWindSpeed(point.cat),
                 stage: getStageName(point.type, point.cat)
             })));
@@ -1316,6 +1316,18 @@ const HypoTrack = (function () {
         exportButtons.id = "export-buttons";
         exportContainer.appendChild(exportButtons);
 
+        const decimalPlacesDiv = div();
+        decimalPlacesDiv.style.cssText = 'border: none; margin: 0; padding: .1rem .2rem';
+        const decimalPlacesLabel = createElement('label', { htmlFor: 'decimal-places-dropdown', textContent: 'Decimal places (lat/lon): ' });
+        const decimalPlacesDropdown = createElement('select', { id: 'decimal-places-dropdown' });
+        [0, 1, 2, 3, 4, 5].forEach(n => {
+            const opt = createElement('option', { value: n, textContent: n });
+            if (n === 1) opt.selected = true;
+            decimalPlacesDropdown.appendChild(opt);
+        });
+        decimalPlacesDiv.append(decimalPlacesLabel, decimalPlacesDropdown);
+        exportContainer.appendChild(decimalPlacesDiv);
+
         const createExportButton = (text, action) => {
             const btn = button(text, new DocumentFragment());
             btn.classList.add("btn");
@@ -1336,7 +1348,8 @@ const HypoTrack = (function () {
         });
 
         createExportButton('Export HURDAT', () => {
-            const hurdat = exportHURDAT();
+            const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
+            const hurdat = exportHURDAT(decimalPlaces);
             const blob = new Blob([hurdat], { type: 'text/plain' });
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -1348,7 +1361,8 @@ const HypoTrack = (function () {
 
         createExportButton('Export JSON', () => {
             const compressJson = document.getElementById('compress-json-checkbox').checked;
-            const json = exportJSON();
+            const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
+            const json = exportJSON(decimalPlaces);
             const jsonString = compressJson ? JSON.stringify(json) : JSON.stringify(json, null, 2);
             const blob = new Blob([jsonString], { type: 'application/json' });
             const link = document.createElement('a');
