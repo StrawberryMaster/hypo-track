@@ -187,7 +187,11 @@ const HypoTrack = (function () {
             console.error('Zoinks! Canvas container not found.');
             return;
         }
+
+        container.style.position = 'relative';
         container.appendChild(canvas);
+        createCoordinatesTab(container);
+
         ctx = canvas.getContext('2d');
 
         panLocation = { long: -180, lat: 90 };
@@ -1127,6 +1131,28 @@ const HypoTrack = (function () {
         return absVal.toFixed(decimalPlaces) + hemisphere;
     }
 
+    function formatCoordinate(value, isLatitude) {
+        const abs = Math.abs(value);
+        const direction = isLatitude ? (value >= 0 ? 'N' : 'S') : (value >= 0 ? 'E' : 'W');
+        return `${abs.toFixed(2)}°${direction}`;
+    }
+
+    function updateCoordinatesDisplay() {
+        const coordTab = document.getElementById('coordinates-tab');
+        const latElement = document.getElementById('coord-lat');
+        const lonElement = document.getElementById('coord-lon');
+
+        if (selectedDot) {
+            coordTab.classList.remove('hidden');
+            latElement.textContent = formatCoordinate(selectedDot.lat, true);
+            lonElement.textContent = formatCoordinate(selectedDot.long, false);
+        } else {
+            coordTab.classList.add('hidden');
+            latElement.textContent = '--';
+            lonElement.textContent = '--';
+        }
+    }
+
     function exportHURDAT(decimalPlaces = 1) {
         const year = new Date().getFullYear();
         const parts = [];
@@ -1579,6 +1605,7 @@ const HypoTrack = (function () {
             saveNameTextbox.value = saveName || '';
             refreshLoadDropdown();
             refreshMapDropdown();
+            updateCoordinatesDisplay();
             requestRedraw();
         };
 
@@ -1613,6 +1640,71 @@ const HypoTrack = (function () {
             }
         });
     };
+
+    function createCoordinatesTab(container) {
+        const coordTab = document.createElement('div');
+        coordTab.id = 'coordinates-tab';
+        coordTab.className = 'hidden';
+        coordTab.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: .6em .2em;
+            border-radius: .2em;
+            font-family: "Consolas", "Courier New", monospace;
+            font-size: 12px;
+            z-index: 1000;
+            min-width: 120px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(5px);
+            transition: opacity 0.2s ease;
+            pointer-events: none;
+        `;
+
+        const coordLabel = document.createElement('div');
+        coordLabel.className = 'coord-label';
+        coordLabel.textContent = 'Coordinates';
+        coordLabel.style.cssText = `
+            font-size: 10px;
+            color: #ccc;
+            margin-bottom: 2px;
+        `;
+
+        const latElement = document.createElement('div');
+        latElement.id = 'coord-lat';
+        latElement.className = 'coord-value';
+        latElement.textContent = '--';
+        latElement.style.cssText = `
+            font-weight: bold;
+            font-size: 11px;
+        `;
+
+        const lonElement = document.createElement('div');
+        lonElement.id = 'coord-lon';
+        lonElement.className = 'coord-value';
+        lonElement.textContent = '--';
+        lonElement.style.cssText = `
+            font-weight: bold;
+            font-size: 11px;
+        `;
+
+        coordTab.appendChild(coordLabel);
+        coordTab.appendChild(latElement);
+        coordTab.appendChild(lonElement);
+        container.appendChild(coordTab);
+
+        const style = document.createElement('style');
+        style.textContent = `
+            #coordinates-tab.hidden {
+                opacity: 0;
+                pointer-events: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
 
     function deselectTrack() {
         selectedTrack = undefined;

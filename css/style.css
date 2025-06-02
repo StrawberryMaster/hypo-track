@@ -243,3 +243,19 @@ img {
 #download-btn:hover {
 	transform: scale(1.1);
 }
+
+#coordinates-tab.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#coordinates-tab .coord-label {
+    font-size: 10px;
+    color: #ccc;
+    margin-bottom: 2px;
+}
+
+#coordinates-tab .coord-value {
+    font-weight: bold;
+    font-size: 11px;
+}
