@@ -1,12 +1,21 @@
 const HypoTrack = (function () {
     const TITLE = 'HypoTrack';
-    const VERSION = '1.0.1';
+    const VERSION = '1.0.2';
     const IDB_KEY = 'hypo-track';
 
     const WIDTH = 1000;
     const HEIGHT = 500;
-    const COLORS_ALT = ['#6ec1ea', '#4dffff', '#ffffd9', '#ffd98c', '#ff9e59', '#ff738a', '#a188fc', '#c0c0c0'];
-    const COLORS = ['#5ebaff', '#00faf4', '#ffffcc', '#ffe775', '#ffc140', '#ff8f20', '#ff6060', '#c0c0c0'];
+
+    const DEFAULT_CATEGORIES = [
+        { name: 'Depression', speed: 30, pressure: 1009, color: '#5ebaff', altColor: '#6ec1ea', isDefault: true },
+        { name: 'Storm', speed: 50, pressure: 1000, color: '#00faf4', altColor: '#4dffff', isDefault: true },
+        { name: 'Category 1', speed: 75, pressure: 987, color: '#ffffcc', altColor: '#ffffd9', isDefault: true },
+        { name: 'Category 2', speed: 90, pressure: 969, color: '#ffe775', altColor: '#ffd98c', isDefault: true },
+        { name: 'Category 3', speed: 105, pressure: 945, color: '#ffc140', altColor: '#ff9e59', isDefault: true },
+        { name: 'Category 4', speed: 125, pressure: 920, color: '#ff8f20', altColor: '#ff738a', isDefault: true },
+        { name: 'Category 5', speed: 140, pressure: 898, color: '#ff6060', altColor: '#a188fc', isDefault: true },
+        { name: 'Unknown', speed: 0, pressure: 1012, color: '#c0c0c0', altColor: '#c0c0c0', isDefault: true }
+    ];
 
     // QuadTree implementation - for spatial indexing
     class QuadTree {
@@ -146,7 +155,8 @@ const HypoTrack = (function () {
         hideNonSelectedTracks = false, deleteTrackPoints = false, useAltColors = false,
         useSmallDots = false, saveName, autosave = true, saveLoadReady = true,
         isDragging = false, beginClickX, beginClickY, beginPanX, beginPanY,
-        beginPointMoveLong, beginPointMoveLat, mouseMode, loadedMapImg = false;
+        beginPointMoveLong, beginPointMoveLat, mouseMode, loadedMapImg = false,
+        customCategories = [], masterCategories = [];
 
     // spatial index for tracks
     let spatialIndex = null;
@@ -160,6 +170,13 @@ const HypoTrack = (function () {
     const ZOOM_BASE = 1.25;
     const VIEW_HEIGHT_RATIO = 0.5;
 
+    function regenerateMasterCategories() {
+        masterCategories = [...DEFAULT_CATEGORIES, ...customCategories];
+        if (refreshGUI) {
+            refreshGUI();
+        }
+    }
+
     function init() {
         // update database version if necessary
         if (Dexie.getDatabaseNames) {
@@ -171,8 +188,9 @@ const HypoTrack = (function () {
                         tempDb.close();
                         const db = new Dexie(IDB_KEY);
                         db.version(2).stores({ saves: '', maps: '' });
+                        db.version(3).stores({ saves: '', maps: '', categories: '&name' });
                     }).catch(() => {
-                        console.log('Database already updated to version 2');
+                        console.log('Database already up to date.');
                     });
                 }
             }).catch(err => console.error('Error checking database version:', err));
@@ -195,6 +213,15 @@ const HypoTrack = (function () {
         ctx = canvas.getContext('2d');
 
         panLocation = { long: -180, lat: 90 };
+
+        Database.loadCategories().then(loaded => {
+            customCategories = loaded;
+            regenerateMasterCategories();
+        }).catch(err => {
+            console.error("Jinkies! Failed to load custom categories:", err);
+            regenerateMasterCategories();
+        });
+
 
         requestRedraw();
 
@@ -535,7 +562,12 @@ const HypoTrack = (function () {
                     const coords = getCoords();
                     longLatToScreenCoordsPooled(d, coords);
 
-                    ctx.fillStyle = useAltColors ? COLORS_ALT[d.cat] : COLORS[d.cat];
+                    const category = masterCategories[d.cat];
+                    if (category) {
+                        ctx.fillStyle = useAltColors ? category.altColor : category.color;
+                    } else {
+                        ctx.fillStyle = '#000000';
+                    }
 
                     function mark(x) {
                         if (x >= -dotSize / 2 && x < WIDTH + dotSize / 2 &&
@@ -875,6 +907,14 @@ const HypoTrack = (function () {
 
     const Database = (() => {
         const db = new Dexie(IDB_KEY);
+        db.version(3).stores({
+            saves: '',
+            maps: '',
+            categories: '&name'
+        }).upgrade(tx => {
+            // this empty upgrade function ensures the new stores are created
+            // for users upgrading from a previous version without the new stores
+        });
         db.version(2).stores({
             saves: '',
             maps: ''
@@ -924,7 +964,17 @@ const HypoTrack = (function () {
                 return await db.maps.get(name);
             },
             listMaps: () => db.maps.toCollection().primaryKeys(),
-            deleteMap: async (name) => await withLock(() => db.maps.delete(name))
+            deleteMap: async (name) => await withLock(() => db.maps.delete(name)),
+
+            saveCategories: async (categories) => {
+                await withLock(() => db.categories.bulkPut(categories));
+            },
+            deleteCategory: async (categoryName) => {
+                await withLock(() => db.categories.delete(categoryName));
+            },
+            loadCategories: async () => {
+                return await db.categories.toArray();
+            }
         };
     })();
 
@@ -1050,11 +1100,13 @@ const HypoTrack = (function () {
     })();
 
     function parseCoordinate(str) {
+        if (typeof str !== 'string') return parseFloat(str) || 0;
         let value = parseFloat(str);
-        const lastChar = str[str.length - 1].toUpperCase();
+        const lastChar = str.trim().slice(-1).toUpperCase();
         if (lastChar === 'S' || lastChar === 'W') value = -value;
         return value;
     }
+
 
     function importJSONFile(file) {
         const reader = new FileReader();
@@ -1062,13 +1114,35 @@ const HypoTrack = (function () {
             try {
                 const json = JSON.parse(reader.result);
                 if (json.tracks && Array.isArray(json.tracks)) {
-                    const speedCategories = [30, 50, 75, 90, 105, 125, 140];
                     tracks = json.tracks.map(trackData =>
                         trackData.map(pointData => {
-                            const cat = speedCategories.indexOf(pointData.speed) !== -1
-                                ? speedCategories.indexOf(pointData.speed) : 0;
+                            let cat = -1;
+                            // first, try to match by category name
+                            if (pointData.category) {
+                                cat = masterCategories.findIndex(c => c.name === pointData.category);
+                            }
+                            // if not found, fall back to matching by speed
+                            if (cat === -1 && pointData.speed !== undefined) {
+                                let closestSpeedCat = -1;
+                                let smallestDiff = Infinity;
+                                DEFAULT_CATEGORIES.forEach((c, index) => {
+                                    if (pointData.speed >= c.speed) {
+                                        const diff = pointData.speed - c.speed;
+                                        if (diff < smallestDiff) {
+                                            smallestDiff = diff;
+                                            closestSpeedCat = index;
+                                        }
+                                    }
+                                });
+                                cat = closestSpeedCat;
+                            }
+                            if (cat === -1) {
+                                cat = masterCategories.findIndex(c => c.name === 'Unknown');
+                            }
+
                             const type = pointData.stage === 'Extratropical cyclone' ? 2 :
                                 pointData.stage === 'Subtropical cyclone' ? 1 : 0;
+
                             return new TrackPoint(
                                 parseCoordinate(pointData.longitude),
                                 parseCoordinate(pointData.latitude),
@@ -1080,7 +1154,7 @@ const HypoTrack = (function () {
                     Database.save();
                     History.reset();
                     deselectTrack();
-                    refreshGUI();
+                    if (refreshGUI) refreshGUI();
                 } else alert('Invalid JSON format: "tracks" array not found.');
             } catch (error) {
                 alert('Error importing JSON: ' + error.message);
@@ -1095,22 +1169,28 @@ const HypoTrack = (function () {
         ENTRY: (year, month, day, time, type, lat, lon, wind, pressure) =>
             `${year}${month}${day}, ${time},  , ${type}, ${lat}, ${lon}, ${wind}, ${pressure},\n`
     };
-    const SPEEDS = [30, 50, 75, 90, 105, 125, 140];
-    const PRESSURES = [1009, 1000, 987, 969, 945, 920, 898, 1012];
     const TYPE_CODES = { EX: 'EX', SD: 'SD', SS: 'SS', TD: 'TD', TS: 'TS', HU: 'HU' };
 
     function getTypeCode(type, cat) {
+        const wind = getWindSpeed(cat);
         if (type === 2) return TYPE_CODES.EX;
-        if (type === 1) return cat <= 1 ? TYPE_CODES.SD : TYPE_CODES.SS;
-        if (type === 0) return cat === 0 ? TYPE_CODES.TD : cat === 1 ? TYPE_CODES.TS : TYPE_CODES.HU;
+        if (type === 1) {
+            return wind < 34 ? TYPE_CODES.SD : TYPE_CODES.SS;
+        }
+        if (type === 0) {
+            if (wind < 34) return TYPE_CODES.TD;
+            if (wind < 64) return TYPE_CODES.TS;
+            return TYPE_CODES.HU;
+        }
+        return '  ';
     }
 
     function getWindSpeed(cat) {
-        return SPEEDS[Math.min(cat, SPEEDS.length - 1)];
+        return masterCategories[cat]?.speed || 0;
     }
 
     function getPressure(cat) {
-        return PRESSURES[cat];
+        return masterCategories[cat]?.pressure || 1015;
     }
 
     const padCache = new Map();
@@ -1202,12 +1282,14 @@ const HypoTrack = (function () {
         const result = { tracks: [] };
         tracks.forEach((track, trackIndex) => {
             if (track.length === 0) return;
-            const stormName = trackIndex === 0 ? "STORMNAME" : `STORMNAME ${trackIndex + 1}`;
+            const stormName = `STORM ${trackIndex + 1}`;
             result.tracks.push(track.map(point => ({
                 name: stormName,
                 latitude: formatLatLon(point.lat, true, decimalPlaces),
                 longitude: formatLatLon(point.long, false, decimalPlaces),
                 speed: getWindSpeed(point.cat),
+                pressure: getPressure(point.cat),
+                category: masterCategories[point.cat]?.name || 'Unknown',
                 stage: getStageName(point.type, point.cat)
             })));
         });
@@ -1224,6 +1306,7 @@ const HypoTrack = (function () {
 
         // GUI //
         let suppresskeybinds = false;
+        let categoryEditorModal;
 
         const mainFragment = document.createDocumentFragment();
 
@@ -1287,14 +1370,11 @@ const HypoTrack = (function () {
         mainFragment.appendChild(dropdowns);
         const dropdownsFragment = new DocumentFragment();
 
-        const categorySelectData = {
-            'Depression': 0, 'Storm': 1, 'Category 1': 2, 'Category 2': 3,
-            'Category 3': 4, 'Category 4': 5, 'Category 5': 6, 'Unknown': 7
-        };
-        const typeSelectData = { 'Tropical': 0, 'Subtropical': 1, 'Non-Tropical': 2 };
+        const categorySelect = createElement('select', { id: 'category-select' });
+        createLabeledElement('category-select', 'Select category:', categorySelect, dropdownsFragment);
+        categorySelect.onchange = () => categoryToPlace = parseInt(categorySelect.value, 10);
 
-        const categorySelect = dropdown('category-select', 'Select category:', categorySelectData, dropdownsFragment);
-        categorySelect.onchange = () => categoryToPlace = categorySelectData[categorySelect.value];
+        const typeSelectData = { 'Tropical': 0, 'Subtropical': 1, 'Non-Tropical': 2 };
         const typeSelect = dropdown('type-select', 'Select type:', typeSelectData, dropdownsFragment);
         typeSelect.onchange = () => typeToPlace = typeSelectData[typeSelect.value];
         dropdowns.appendChild(dropdownsFragment);
@@ -1309,7 +1389,7 @@ const HypoTrack = (function () {
         modifyTrackPointButton.onclick = () => {
             if (!selectedDot) return;
             const oldCat = selectedDot.cat, oldType = selectedDot.type;
-            selectedDot.cat = categorySelectData[categorySelect.value];
+            selectedDot.cat = parseInt(categorySelect.value, 10);
             selectedDot.type = typeSelectData[typeSelect.value];
             History.record(History.ActionTypes.modifyPoint, {
                 trackIndex: tracks.indexOf(selectedTrack),
@@ -1331,8 +1411,143 @@ const HypoTrack = (function () {
         const smallDotCheckbox = checkbox('small-dot-checkbox', 'Season summary mode', checkboxFragment);
         smallDotCheckbox.onchange = () => useSmallDots = smallDotCheckbox.checked;
         const autosaveCheckbox = checkbox('autosave-checkbox', 'Autosave', checkboxFragment);
+        autosaveCheckbox.checked = true;
         autosaveCheckbox.onchange = () => autosave = autosaveCheckbox.checked;
         buttons.appendChild(checkboxFragment);
+
+        // Save/Load UI //
+        const saveloadui = div();
+        const saveloadFragment = new DocumentFragment();
+        mainFragment.appendChild(saveloadui);
+
+        const saveButton = button('Save', saveloadFragment);
+        const saveNameTextbox = textbox('save-name-textbox', 'Season save name:', saveloadFragment);
+        const loadDropdown = createElement('select', { id: 'load-season-dropdown' });
+        createLabeledElement('load-season-dropdown', 'Load season', loadDropdown, saveloadFragment);
+        const newSeasonButton = button('New season', saveloadFragment);
+        newSeasonButton.style.marginTop = '1rem';
+        saveloadui.appendChild(saveloadFragment);
+
+        // Custom Category Management UI //
+        const catManagementContainer = div();
+        catManagementContainer.id = "cat-management-container";
+        mainFragment.appendChild(catManagementContainer);
+
+        const catManagementTitle = createElement('h3', { textContent: 'Custom categories' });
+        catManagementTitle.style.margin = '.2rem 0 .5rem 0';
+        catManagementContainer.appendChild(catManagementTitle);
+        const catManagementFragment = new DocumentFragment();
+        const addCategoryButton = button('Add new category', catManagementFragment);
+        addCategoryButton.onclick = () => openCategoryEditor(null);
+        const customCategoryListDiv = div();
+        customCategoryListDiv.id = 'custom-category-list';
+        catManagementFragment.append(customCategoryListDiv);
+        catManagementContainer.appendChild(catManagementFragment);
+
+
+        // Custom maps UI //
+        const mapsContainer = div();
+        mapsContainer.id = "maps-container";
+        mainFragment.appendChild(mapsContainer);
+
+        const mapsTitle = createElement('h3', { textContent: 'Custom maps' });
+        mapsTitle.style.margin = '.2rem 0 .5rem 0';
+        mapsContainer.appendChild(mapsTitle);
+
+        const mapsFragment = new DocumentFragment();
+        const customMapCheckbox = checkbox('use-custom-map-checkbox', 'Use custom map', mapsFragment);
+        customMapCheckbox.onchange = () => {
+            useCustomMap = customMapCheckbox.checked;
+            loadImages().then(() => {
+                loadedMapImg = true;
+                requestRedraw();
+            }).catch(err => console.error('Zoinks! Failed to load images:', err));
+        };
+
+        const mapDropdown = createElement('select', { id: 'custom-map-dropdown' });
+        createLabeledElement('custom-map-dropdown', 'Select map:', mapDropdown, mapsFragment);
+        mapDropdown.onchange = () => {
+            if (mapDropdown.value) {
+                currentMapName = mapDropdown.value;
+                if (useCustomMap) {
+                    loadImages().then(() => {
+                        loadedMapImg = true;
+                        requestRedraw();
+                    }).catch(err => console.error('Yikes! Failed to load images:', err));
+                }
+            }
+        };
+
+        const uploadMapButton = button('Upload map', mapsFragment);
+        uploadMapButton.onclick = () => {
+            const fileInput = createElement('input', { type: 'file', accept: 'image/*' });
+            fileInput.style.display = 'none';
+            fileInput.onchange = () => {
+                if (fileInput.files.length > 0) {
+                    const file = fileInput.files[0];
+                    const mapNamePrompt = prompt('Select a name for the map (4-32 characters, letters, numbers, spaces, _ or -):', currentMapName);
+                    const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
+
+                    if (mapNamePrompt && MAP_NAME_REGEX.test(mapNamePrompt)) {
+                        const reader = new FileReader();
+                        reader.onload = async () => {
+                            try {
+                                await Database.saveMap(mapNamePrompt, new Uint8Array(reader.result));
+                                alert(`Map "${mapNamePrompt}" saved successfully.`);
+                                refreshMapDropdown();
+                                currentMapName = mapNamePrompt;
+                                useCustomMap = true;
+                                customMapCheckbox.checked = true;
+                                loadImages().then(() => {
+                                    loadedMapImg = true;
+                                    requestRedraw();
+                                });
+                            } catch (error) {
+                                alert(`Jinkies! Error saving map: ${error.message}`);
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    } else {
+                        alert('Invalid map name. Please use 4-32 characters, letters, numbers, spaces, _ or -.');
+                    }
+                    fileInput.value = "";
+                }
+            };
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            document.body.removeChild(fileInput);
+        };
+
+        const deleteMapButton = button('Delete map', mapsFragment);
+        deleteMapButton.onclick = async () => {
+            if (currentMapName === 'Default') {
+                alert('One does not simply delete the default map.');
+                return;
+            }
+
+            if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
+                try {
+                    await Database.deleteMap(currentMapName);
+                    alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
+
+                    customMapImg = null;
+                    currentMapName = 'Default';
+                    useCustomMap = false;
+                    customMapCheckbox.checked = false;
+
+                    await refreshMapDropdown();
+                    await loadImages();
+                    loadedMapImg = true;
+                    requestRedraw();
+                } catch (error) {
+                    alert(`Well, this is awkward. Error deleting map: ${error.message}`);
+                    console.error('Delete map error:', error);
+                }
+            }
+        };
+
+        mapsContainer.appendChild(mapsFragment);
+
         // Export/Import UI //
         const exportContainer = div();
         exportContainer.id = "export-container";
@@ -1424,120 +1639,6 @@ const HypoTrack = (function () {
             createElement('label', { htmlFor: 'compatibility-mode-checkbox', textContent: 'Compatibility mode', title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).' })
         );
 
-        // Save/Load UI //
-        const saveloadui = div();
-        const saveloadFragment = new DocumentFragment();
-        mainFragment.appendChild(saveloadui);
-
-        const saveButton = button('Save', saveloadFragment);
-        const saveNameTextbox = textbox('save-name-textbox', 'Season save name:', saveloadFragment);
-        const loadDropdown = dropdown('load-season-dropdown', 'Load season', {}, saveloadFragment);
-        const newSeasonButton = button('New season', saveloadFragment);
-        newSeasonButton.style.marginTop = '1rem';
-        saveloadui.appendChild(saveloadFragment);
-
-        // Custom maps UI //
-        const mapsContainer = div();
-        mapsContainer.id = "maps-container";
-        mainFragment.appendChild(mapsContainer);
-
-        const mapsTitle = createElement('h3', { textContent: 'Custom maps' });
-        mapsTitle.style.margin = '.2rem 0 .5rem 0';
-        mapsContainer.appendChild(mapsTitle);
-
-        const mapsFragment = new DocumentFragment();
-        const customMapCheckbox = checkbox('use-custom-map-checkbox', 'Use custom map', mapsFragment);
-        customMapCheckbox.onchange = () => {
-            useCustomMap = customMapCheckbox.checked;
-            loadImages().then(() => {
-                loadedMapImg = true;
-                requestRedraw();
-            }).catch(err => console.error('Zoinks! Failed to load images:', err));
-        };
-
-        const mapDropdown = dropdown('custom-map-dropdown', 'Select map:', {}, mapsFragment);
-        mapDropdown.onchange = () => {
-            if (mapDropdown.value) {
-                currentMapName = mapDropdown.value;
-                if (useCustomMap) {
-                    loadImages().then(() => {
-                        loadedMapImg = true;
-                        requestRedraw();
-                    }).catch(err => console.error('Yikes! Failed to load images:', err));
-                }
-            }
-        };
-
-        const uploadMapButton = button('Upload map', mapsFragment);
-        uploadMapButton.onclick = () => {
-            const fileInput = createElement('input', { type: 'file', accept: 'image/*' });
-            fileInput.style.display = 'none';
-            fileInput.onchange = () => {
-                if (fileInput.files.length > 0) {
-                    const file = fileInput.files[0];
-                    const mapNamePrompt = prompt('Select a name for the map (4-32 characters, letters, numbers, spaces, _ or -):', currentMapName);
-                    const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
-
-                    if (mapNamePrompt && MAP_NAME_REGEX.test(mapNamePrompt)) {
-                        const reader = new FileReader();
-                        reader.onload = async () => {
-                            try {
-                                await Database.saveMap(mapNamePrompt, new Uint8Array(reader.result));
-                                alert(`Map "${mapNamePrompt}" saved successfully.`);
-                                refreshMapDropdown();
-                                currentMapName = mapNamePrompt;
-                                useCustomMap = true;
-                                customMapCheckbox.checked = true;
-                                loadImages().then(() => {
-                                    loadedMapImg = true;
-                                    requestRedraw();
-                                });
-                            } catch (error) {
-                                alert(`Jinkies! Error saving map: ${error.message}`);
-                            }
-                        };
-                        reader.readAsArrayBuffer(file);
-                    } else {
-                        alert('Invalid map name. Please use 4-32 characters, letters, numbers, spaces, _ or -.');
-                    }
-                    fileInput.value = "";
-                }
-            };
-            document.body.appendChild(fileInput);
-            fileInput.click();
-            document.body.removeChild(fileInput);
-        };
-
-        const deleteMapButton = button('Delete map', mapsFragment);
-        deleteMapButton.onclick = async () => {
-            if (currentMapName === 'Default') {
-                alert('One does not simply delete the default map.');
-                return;
-            }
-
-            if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
-                try {
-                    await Database.deleteMap(currentMapName);
-                    alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
-
-                    customMapImg = null;
-                    currentMapName = 'Default';
-                    useCustomMap = false;
-                    customMapCheckbox.checked = false;
-
-                    await refreshMapDropdown();
-                    await loadImages();
-                    loadedMapImg = true;
-                    requestRedraw();
-                } catch (error) {
-                    alert(`Well, this is awkward. Error deleting map: ${error.message}`);
-                    console.error('Delete map error:', error);
-                }
-            }
-        };
-
-        mapsContainer.appendChild(mapsFragment);
-
         async function refreshMapDropdown() {
             try {
                 const mapList = await Database.listMaps();
@@ -1567,10 +1668,11 @@ const HypoTrack = (function () {
         loadDropdown.onchange = () => {
             if (loadDropdown.value) {
                 saveName = loadDropdown.value;
-                Database.load();
-                deselectTrack();
-                History.reset();
-                refreshGUI();
+                Database.load().then(() => {
+                    deselectTrack();
+                    History.reset();
+                    refreshGUI();
+                });
             }
         };
 
@@ -1586,14 +1688,53 @@ const HypoTrack = (function () {
             const dropdownFragment = new DocumentFragment();
             saveList.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
             loadDropdown.replaceChildren(dropdownFragment);
-            loadDropdown.value = '';
+            loadDropdown.value = saveName || '';
+        }
+
+        function refreshCategoryDropdown() {
+            const selectedValue = categorySelect.value;
+            categorySelect.innerHTML = '';
+            masterCategories.forEach((cat, index) => {
+                const opt = createElement('option', { value: index, textContent: cat.name });
+                categorySelect.appendChild(opt);
+            });
+            categorySelect.value = masterCategories.some((c, i) => i == selectedValue) ? selectedValue : categoryToPlace;
+        }
+
+        function refreshCustomCategoryList() {
+            const listDiv = document.getElementById('custom-category-list');
+            if (!listDiv) return;
+            listDiv.innerHTML = '';
+
+            customCategories.forEach(cat => {
+                const catDiv = div();
+                catDiv.className = 'custom-cat-item';
+                catDiv.style.cssText = `display: flex; align-items: center; justify-content: space-between; padding: 4px; border-left: 5px solid ${cat.color}; margin-bottom: 2px; background: #eee; border-radius: 3px;`;
+
+                const nameSpan = createElement('span', { textContent: `${cat.name} (${cat.speed}kt, ${cat.pressure}mb)` });
+
+                const buttonsDiv = div();
+                const editBtn = createElement('button', { textContent: 'Edit', className: 'btn-small' });
+                editBtn.onclick = () => openCategoryEditor(cat);
+                const deleteBtn = createElement('button', { textContent: 'Del', className: 'btn-small' });
+                deleteBtn.onclick = () => deleteCustomCategory(cat.name);
+
+                buttonsDiv.append(editBtn, deleteBtn);
+                catDiv.append(nameSpan, buttonsDiv);
+                listDiv.appendChild(catDiv);
+            });
         }
 
         refreshGUI = () => {
             undoButton.disabled = !History.canUndo();
             redoButton.disabled = !History.canRedo();
-            categorySelect.value = Object.keys(categorySelectData).find(k => categorySelectData[k] === categoryToPlace);
+
+            refreshCategoryDropdown();
+            refreshCustomCategoryList();
+
+            categorySelect.value = categoryToPlace;
             typeSelect.value = Object.keys(typeSelectData).find(k => typeSelectData[k] === typeToPlace);
+
             singleTrackCheckbox.checked = hideNonSelectedTracks;
             singleTrackCheckbox.disabled = deselectButton.disabled = !selectedTrack;
             deletePointsCheckbox.checked = deleteTrackPoints;
@@ -1603,6 +1744,7 @@ const HypoTrack = (function () {
             autosaveCheckbox.checked = autosave;
             saveButton.disabled = loadDropdown.disabled = newSeasonButton.disabled = !saveLoadReady;
             saveNameTextbox.value = saveName || '';
+
             refreshLoadDropdown();
             refreshMapDropdown();
             updateCoordinatesDisplay();
@@ -1610,10 +1752,102 @@ const HypoTrack = (function () {
         };
 
         uiContainer.appendChild(mainFragment);
+
+        // --- Category Editor Modal Logic ---
+        function createCategoryEditorModal() {
+            const modal = createElement('div', { id: 'category-editor-modal' });
+            modal.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: none; align-items: center; justify-content: center;`;
+            const form = createElement('form');
+            form.style.cssText = `background: #f0f0f0; color: #333; padding: 20px; border-radius: 5px; width: 320px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);`;
+            form.innerHTML = `
+                <h4 id="category-editor-title" style="margin-top: 0;">Edit Category</h4>
+                <input type="hidden" id="category-editor-original-name">
+                <label style="display:block; margin-bottom: 8px;">Name: <input type="text" id="category-editor-name" required pattern="[a-zA-Z0-9 _\\-]{1,20}" style="width: 100%;"></label>
+                <label style="display:block; margin-bottom: 8px;">Color: <input type="color" id="category-editor-color" value="#ffffff"></label>
+                <label style="display:block; margin-bottom: 8px;">Alt color (optional): <input type="color" id="category-editor-alt-color" value="#ffffff"></label>
+                <label style="display:block; margin-bottom: 8px;">Min. speed (kt): <input type="number" id="category-editor-speed" required min="0" step="1" style="width: 100%;"></label>
+                <label style="display:block; margin-bottom: 15px;">Av. pressure (mb): <input type="number" id="category-editor-pressure" required min="800" max="1050" style="width: 100%;"></label>
+                <button type="submit" id="category-editor-save" class="btn">Save</button>
+                <button type="button" id="category-editor-cancel" class="btn">Cancel</button>
+            `;
+            modal.appendChild(form);
+            document.body.appendChild(modal);
+
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                const originalName = document.getElementById('category-editor-original-name').value;
+                const newCategory = {
+                    name: document.getElementById('category-editor-name').value.trim(),
+                    color: document.getElementById('category-editor-color').value,
+                    altColor: document.getElementById('category-editor-alt-color').value,
+                    speed: parseInt(document.getElementById('category-editor-speed').value, 10),
+                    pressure: parseInt(document.getElementById('category-editor-pressure').value, 10)
+                };
+
+                if (newCategory.name !== originalName && masterCategories.some(c => c.name === newCategory.name)) {
+                    alert("A category with this name already exists.");
+                    return;
+                }
+
+                if (originalName) {
+                    const index = customCategories.findIndex(c => c.name === originalName);
+                    if (index > -1) {
+                        if (originalName !== newCategory.name) {
+                            await Database.deleteCategory(originalName);
+                        }
+                        customCategories[index] = newCategory;
+                    }
+                } else {
+                    customCategories.push(newCategory);
+                }
+
+                await Database.saveCategories(customCategories);
+                regenerateMasterCategories();
+                modal.style.display = 'none';
+                requestRedraw();
+            };
+            document.getElementById('category-editor-cancel').onclick = () => {
+                modal.style.display = 'none';
+            };
+            return modal;
+        }
+
+        async function deleteCustomCategory(categoryName) {
+            const catIndexInMaster = masterCategories.findIndex(c => c.name === categoryName);
+            if (catIndexInMaster === -1) return;
+
+            const isInUse = tracks.some(track => track.some(point => point.cat === catIndexInMaster));
+            if (isInUse) {
+                alert(`Cannot delete category "${categoryName}" because it is currently in use by one or more track points.`);
+                return;
+            }
+
+            if (confirm(`Are you sure you want to delete the category "${categoryName}"? This cannot be undone.`)) {
+                customCategories = customCategories.filter(c => c.name !== categoryName);
+                await Database.deleteCategory(categoryName);
+                regenerateMasterCategories();
+                requestRedraw();
+            }
+        }
+
+        function openCategoryEditor(category = null) {
+            if (!categoryEditorModal) return;
+            const isEditing = !!category;
+            document.getElementById('category-editor-title').textContent = isEditing ? 'Edit category' : 'Add new category';
+            document.getElementById('category-editor-original-name').value = isEditing ? category.name : '';
+            document.getElementById('category-editor-name').value = isEditing ? category.name : '';
+            document.getElementById('category-editor-color').value = isEditing ? category.color : '#888888';
+            document.getElementById('category-editor-alt-color').value = isEditing ? category.altColor : '#999999';
+            document.getElementById('category-editor-speed').value = isEditing ? category.speed : '150';
+            document.getElementById('category-editor-pressure').value = isEditing ? category.pressure : '900';
+            categoryEditorModal.style.display = 'flex';
+        }
+
+        categoryEditorModal = createCategoryEditorModal();
         refreshGUI();
 
         document.addEventListener('keydown', (e) => {
-            if (suppresskeybinds) return;
+            if (suppresskeybinds || document.getElementById('category-editor-modal').style.display === 'flex') return;
             const k = e.key.toLowerCase();
             const keyActions = {
                 'd': () => categoryToPlace = 0, 's': () => categoryToPlace = 1,
@@ -1702,6 +1936,7 @@ const HypoTrack = (function () {
                 opacity: 0;
                 pointer-events: none;
             }
+            .btn-small { padding: 2px 4px; font-size: 10px; margin-left: 4px; }
         `;
         document.head.appendChild(style);
     }
