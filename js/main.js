@@ -7,13 +7,13 @@ const HypoTrack = (function () {
     const HEIGHT = 500;
 
     const DEFAULT_CATEGORIES = [
-        { name: 'Depression', speed: 30, pressure: 1009, color: '#5ebaff', altColor: '#6ec1ea', isDefault: true },
-        { name: 'Storm', speed: 50, pressure: 1000, color: '#00faf4', altColor: '#4dffff', isDefault: true },
-        { name: 'Category 1', speed: 75, pressure: 987, color: '#ffffcc', altColor: '#ffffd9', isDefault: true },
-        { name: 'Category 2', speed: 90, pressure: 969, color: '#ffe775', altColor: '#ffd98c', isDefault: true },
-        { name: 'Category 3', speed: 105, pressure: 945, color: '#ffc140', altColor: '#ff9e59', isDefault: true },
-        { name: 'Category 4', speed: 125, pressure: 920, color: '#ff8f20', altColor: '#ff738a', isDefault: true },
-        { name: 'Category 5', speed: 140, pressure: 898, color: '#ff6060', altColor: '#a188fc', isDefault: true },
+        { name: 'Depression', speed: 0, pressure: 1009, color: '#5ebaff', altColor: '#6ec1ea', isDefault: true },
+        { name: 'Storm', speed: 34, pressure: 1000, color: '#00faf4', altColor: '#4dffff', isDefault: true },
+        { name: 'Category 1', speed: 64, pressure: 987, color: '#ffffcc', altColor: '#ffffd9', isDefault: true },
+        { name: 'Category 2', speed: 83, pressure: 969, color: '#ffe775', altColor: '#ffd98c', isDefault: true },
+        { name: 'Category 3', speed: 96, pressure: 945, color: '#ffc140', altColor: '#ff9e59', isDefault: true },
+        { name: 'Category 4', speed: 113, pressure: 920, color: '#ff8f20', altColor: '#ff738a', isDefault: true },
+        { name: 'Category 5', speed: 137, pressure: 898, color: '#ff6060', altColor: '#a188fc', isDefault: true },
         { name: 'Unknown', speed: 0, pressure: 1012, color: '#c0c0c0', altColor: '#c0c0c0', isDefault: true }
     ];
 
@@ -1107,55 +1107,66 @@ const HypoTrack = (function () {
         return value;
     }
 
-
     function importJSONFile(file) {
         const reader = new FileReader();
         reader.onload = () => {
             try {
                 const json = JSON.parse(reader.result);
+                let tracksData = [];
+
+                // handle different JSON formats
                 if (json.tracks && Array.isArray(json.tracks)) {
-                    tracks = json.tracks.map(trackData =>
-                        trackData.map(pointData => {
-                            let cat = -1;
-                            // first, try to match by category name
-                            if (pointData.category) {
-                                cat = masterCategories.findIndex(c => c.name === pointData.category);
-                            }
-                            // if not found, fall back to matching by speed
-                            if (cat === -1 && pointData.speed !== undefined) {
-                                let closestSpeedCat = -1;
-                                let smallestDiff = Infinity;
-                                DEFAULT_CATEGORIES.forEach((c, index) => {
-                                    if (pointData.speed >= c.speed) {
-                                        const diff = pointData.speed - c.speed;
-                                        if (diff < smallestDiff) {
-                                            smallestDiff = diff;
-                                            closestSpeedCat = index;
-                                        }
+                    // e.g.: { tracks: [[...], [...]] }
+                    tracksData = json.tracks;
+                } else if (Array.isArray(json)) {
+                    // simple array of points
+                    tracksData = [json];
+                } else {
+                    alert('Invalid JSON format. Expected an array of tracks or an object with a "tracks" property.');
+                    return;
+                }
+
+                tracks = tracksData.map(trackData =>
+                    trackData.map(pointData => {
+                        let cat = -1;
+                        // first, try to match by category name
+                        if (pointData.category) {
+                            cat = masterCategories.findIndex(c => c.name === pointData.category);
+                        }
+                        // if not found, fall back to matching by speed
+                        if (cat === -1 && pointData.speed !== undefined) {
+                            let closestSpeedCat = -1;
+                            let smallestDiff = Infinity;
+                            DEFAULT_CATEGORIES.forEach((c, index) => {
+                                if (pointData.speed >= c.speed) {
+                                    const diff = pointData.speed - c.speed;
+                                    if (diff < smallestDiff) {
+                                        smallestDiff = diff;
+                                        closestSpeedCat = index;
                                     }
-                                });
-                                cat = closestSpeedCat;
-                            }
-                            if (cat === -1) {
-                                cat = masterCategories.findIndex(c => c.name === 'Unknown');
-                            }
+                                }
+                            });
+                            cat = closestSpeedCat;
+                        }
+                        if (cat === -1) {
+                            cat = masterCategories.findIndex(c => c.name === 'Unknown');
+                        }
 
-                            const type = pointData.stage === 'Extratropical cyclone' ? 2 :
-                                pointData.stage === 'Subtropical cyclone' ? 1 : 0;
+                        const type = pointData.stage === 'Extratropical cyclone' ? 2 :
+                            pointData.stage === 'Subtropical cyclone' ? 1 : 0;
 
-                            return new TrackPoint(
-                                parseCoordinate(pointData.longitude),
-                                parseCoordinate(pointData.latitude),
-                                cat,
-                                type
-                            );
-                        })
-                    );
-                    Database.save();
-                    History.reset();
-                    deselectTrack();
-                    if (refreshGUI) refreshGUI();
-                } else alert('Invalid JSON format: "tracks" array not found.');
+                        return new TrackPoint(
+                            parseCoordinate(pointData.longitude),
+                            parseCoordinate(pointData.latitude),
+                            cat,
+                            type
+                        );
+                    })
+                );
+                Database.save();
+                History.reset();
+                deselectTrack();
+                if (refreshGUI) refreshGUI();
             } catch (error) {
                 alert('Error importing JSON: ' + error.message);
             }
