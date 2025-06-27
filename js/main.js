@@ -7,13 +7,13 @@ const HypoTrack = (function () {
     const HEIGHT = 500;
 
     const DEFAULT_CATEGORIES = [
-        { name: 'Depression', speed: 0, pressure: 1009, color: '#5ebaff', altColor: '#6ec1ea', isDefault: true },
-        { name: 'Storm', speed: 34, pressure: 1000, color: '#00faf4', altColor: '#4dffff', isDefault: true },
-        { name: 'Category 1', speed: 64, pressure: 987, color: '#ffffcc', altColor: '#ffffd9', isDefault: true },
-        { name: 'Category 2', speed: 83, pressure: 969, color: '#ffe775', altColor: '#ffd98c', isDefault: true },
-        { name: 'Category 3', speed: 96, pressure: 945, color: '#ffc140', altColor: '#ff9e59', isDefault: true },
-        { name: 'Category 4', speed: 113, pressure: 920, color: '#ff8f20', altColor: '#ff738a', isDefault: true },
-        { name: 'Category 5', speed: 137, pressure: 898, color: '#ff6060', altColor: '#a188fc', isDefault: true },
+        { name: 'Depression', speed: 20, pressure: 1009, color: '#5ebaff', altColor: '#6ec1ea', isDefault: true },
+        { name: 'Storm', speed: 35, pressure: 1000, color: '#00faf4', altColor: '#4dffff', isDefault: true },
+        { name: 'Category 1', speed: 65, pressure: 987, color: '#ffffcc', altColor: '#ffffd9', isDefault: true },
+        { name: 'Category 2', speed: 85, pressure: 969, color: '#ffe775', altColor: '#ffd98c', isDefault: true },
+        { name: 'Category 3', speed: 100, pressure: 945, color: '#ffc140', altColor: '#ff9e59', isDefault: true },
+        { name: 'Category 4', speed: 115, pressure: 920, color: '#ff8f20', altColor: '#ff738a', isDefault: true },
+        { name: 'Category 5', speed: 140, pressure: 898, color: '#ff6060', altColor: '#a188fc', isDefault: true },
         { name: 'Unknown', speed: 0, pressure: 1012, color: '#c0c0c0', altColor: '#c0c0c0', isDefault: true }
     ];
 
