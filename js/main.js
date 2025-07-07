@@ -1,6 +1,6 @@
 const HypoTrack = (function () {
     const TITLE = 'HypoTrack';
-    const VERSION = '1.0.2';
+    const VERSION = '1.0.3';
     const IDB_KEY = 'hypo-track';
 
     const WIDTH = 1000;
@@ -158,6 +158,9 @@ const HypoTrack = (function () {
         beginPointMoveLong, beginPointMoveLat, mouseMode, loadedMapImg = false,
         customCategories = [], masterCategories = [];
 
+    // folder management state
+    let folders = [], currentView = { type: 'root' }, selectedBrowserItems = new Set();
+
     // spatial index for tracks
     let spatialIndex = null;
     let needsIndexRebuild = true;
@@ -187,8 +190,9 @@ const HypoTrack = (function () {
                     tempDb.open().then(() => {
                         tempDb.close();
                         const db = new Dexie(IDB_KEY);
-                        db.version(2).stores({ saves: '', maps: '' });
+                        db.version(4).stores({ saves: '', maps: '', categories: '&name', folders: '&name' });
                         db.version(3).stores({ saves: '', maps: '', categories: '&name' });
+                        db.version(2).stores({ saves: '', maps: '' });
                     }).catch(() => {
                         console.log('Database already up to date.');
                     });
@@ -907,13 +911,19 @@ const HypoTrack = (function () {
 
     const Database = (() => {
         const db = new Dexie(IDB_KEY);
+        db.version(4).stores({
+            saves: '',
+            maps: '',
+            categories: '&name',
+            folders: '&name'
+        }).upgrade(tx => {
+            // this empty upgrade function ensures the new stores are created
+            // for users upgrading from a previous version without the new stores
+        });
         db.version(3).stores({
             saves: '',
             maps: '',
             categories: '&name'
-        }).upgrade(tx => {
-            // this empty upgrade function ensures the new stores are created
-            // for users upgrading from a previous version without the new stores
         });
         db.version(2).stores({
             saves: '',
@@ -949,32 +959,26 @@ const HypoTrack = (function () {
                 await withLock(async () => {
                     tracks = (await db.saves.get(getKey())) || [];
                     tracks.forEach(track => track.forEach((point, i) => track[i] = Object.assign(new TrackPoint(), point)));
-
+                    
                     // mark spatial index for rebuild
                     needsIndexRebuild = true;
                 });
             },
             list: () => db.saves.toCollection().primaryKeys(),
-            delete: async () => await withLock(() => db.saves.delete(getKey())),
+            delete: async (keyToDelete) => await withLock(() => db.saves.delete(keyToDelete || getKey())),
 
-            saveMap: async (name, imageData) => {
-                await withLock(() => db.maps.put(imageData, name));
-            },
-            loadMap: async (name) => {
-                return await db.maps.get(name);
-            },
+            saveMap: async (name, imageData) => await withLock(() => db.maps.put(imageData, name)),
+            loadMap: (name) => db.maps.get(name),
             listMaps: () => db.maps.toCollection().primaryKeys(),
             deleteMap: async (name) => await withLock(() => db.maps.delete(name)),
 
-            saveCategories: async (categories) => {
-                await withLock(() => db.categories.bulkPut(categories));
-            },
-            deleteCategory: async (categoryName) => {
-                await withLock(() => db.categories.delete(categoryName));
-            },
-            loadCategories: async () => {
-                return await db.categories.toArray();
-            }
+            saveCategories: async (categories) => await withLock(() => db.categories.bulkPut(categories)),
+            deleteCategory: async (categoryName) => await withLock(() => db.categories.delete(categoryName)),
+            loadCategories: () => db.categories.toArray(),
+
+            saveFolders: async (foldersToSave) => await withLock(() => db.folders.bulkPut(foldersToSave)),
+            deleteFolder: async (folderName) => await withLock(() => db.folders.delete(folderName)),
+            loadFolders: () => db.folders.toArray()
         };
     })();
 
@@ -1314,6 +1318,24 @@ const HypoTrack = (function () {
             console.error('UI container not found!');
             return;
         }
+        
+        // for the folder UI
+        const style = document.createElement('style');
+        style.textContent = `
+            #season-browser { border: 1px solid #ccc; height: 150px; overflow-y: auto; background: #f9f9f9; margin: 5px 0; border-radius: 3px; }
+            .browser-item { padding: 4px 8px; cursor: pointer; user-select: none; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+            .browser-item:last-child { border-bottom: none; }
+            .browser-item:hover { background: #e9e9e9; }
+            .browser-item.selected { background: #a0c4ff; color: #000; font-weight: bold; }
+            .folder-item::before { content: '📁'; }
+            .season-item::before { content: '🌀'; }
+            #browser-header { display: flex; align-items: center; margin-top: 1rem; gap: 5px; }
+            #browser-path { font-weight: bold; color: #555; background: #eee; padding: 4px 8px; border-radius: 3px; flex-grow: 1; }
+            #browser-back-btn { padding: 2px 8px; }
+            #browser-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+            #browser-actions .btn { flex-grow: 1; }
+        `;
+        document.head.appendChild(style);
 
         // GUI //
         let suppresskeybinds = false;
@@ -1427,17 +1449,40 @@ const HypoTrack = (function () {
         buttons.appendChild(checkboxFragment);
 
         // Save/Load UI //
-        const saveloadui = div();
-        const saveloadFragment = new DocumentFragment();
-        mainFragment.appendChild(saveloadui);
+        const saveloadContainer = div();
+        saveloadContainer.id = 'saveload-container';
+        mainFragment.appendChild(saveloadContainer);
+        
+        const saveloadTitle = createElement('h3', { textContent: 'Season management' });
+        saveloadTitle.style.cssText = 'margin: 0 0 .5rem 0;';
+        saveloadContainer.appendChild(saveloadTitle);
 
-        const saveButton = button('Save', saveloadFragment);
-        const saveNameTextbox = textbox('save-name-textbox', 'Season save name:', saveloadFragment);
-        const loadDropdown = createElement('select', { id: 'load-season-dropdown' });
-        createLabeledElement('load-season-dropdown', 'Load season', loadDropdown, saveloadFragment);
-        const newSeasonButton = button('New season', saveloadFragment);
-        newSeasonButton.style.marginTop = '1rem';
-        saveloadui.appendChild(saveloadFragment);
+        const saveControls = div();
+        const saveNameTextbox = textbox('save-name-textbox', 'Season name:', saveControls);
+        saveNameTextbox.maxLength = 32;
+        const saveButton = button('Save current', saveControls);
+        saveloadContainer.appendChild(saveControls);
+        
+        const browserHeader = div();
+        browserHeader.id = 'browser-header';
+        const backButton = button('..', new DocumentFragment());
+        backButton.id = 'browser-back-btn';
+        const browserPathSpan = createElement('span', { id: 'browser-path' });
+        browserHeader.append(backButton, browserPathSpan);
+        saveloadContainer.appendChild(browserHeader);
+
+        const seasonBrowserDiv = div();
+        seasonBrowserDiv.id = 'season-browser';
+        saveloadContainer.appendChild(seasonBrowserDiv);
+        
+        const browserActions = div();
+        browserActions.id = 'browser-actions';
+        const newFolderButton = button('New folder', new DocumentFragment());
+        const moveSelectionButton = button('Move to...', new DocumentFragment());
+        const deleteSelectionButton = button('Delete', new DocumentFragment());
+        const newSeasonButton = button('New season', new DocumentFragment());
+        browserActions.append(newFolderButton, moveSelectionButton, deleteSelectionButton, newSeasonButton);
+        saveloadContainer.appendChild(browserActions);
 
         // Custom Category Management UI //
         const catManagementContainer = div();
@@ -1649,6 +1694,213 @@ const HypoTrack = (function () {
             createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' }),
             createElement('label', { htmlFor: 'compatibility-mode-checkbox', textContent: 'Compatibility mode', title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).' })
         );
+        
+        // --- Folder management logic ---
+        const SAVE_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
+
+        function clearBrowserSelection() {
+            document.querySelectorAll('.browser-item.selected').forEach(el => el.classList.remove('selected'));
+            selectedBrowserItems.clear();
+            updateBrowserActionButtons();
+        }
+
+        function updateBrowserActionButtons() {
+            const hasSelection = selectedBrowserItems.size > 0;
+            moveSelectionButton.disabled = !hasSelection;
+            deleteSelectionButton.disabled = !hasSelection;
+        }
+
+        async function refreshSeasonBrowser() {
+            const allSaves = await Database.list();
+            folders = await Database.loadFolders();
+
+            const browserDiv = document.getElementById('season-browser');
+            browserDiv.innerHTML = '';
+            
+            const assignedSaves = new Set(folders.flatMap(f => f.seasons));
+            let itemsToShow = [];
+
+            if (currentView.type === 'root') {
+                const unassignedSaves = allSaves.filter(s => !assignedSaves.has(s));
+                const folderItems = folders.map(f => ({ type: 'folder', name: f.name }));
+                const seasonItems = unassignedSaves.map(s => ({ type: 'season', name: s }));
+                itemsToShow = [...folderItems, ...seasonItems];
+                browserPathSpan.textContent = 'All seasons';
+                backButton.disabled = true;
+            } else { // 'folder' view
+                const folder = folders.find(f => f.name === currentView.name);
+                if (folder) {
+                    itemsToShow = folder.seasons
+                        .filter(sName => allSaves.includes(sName)) // ensure season exists
+                        .map(s => ({ type: 'season', name: s }));
+                    browserPathSpan.textContent = `📁 ${currentView.name}`;
+                }
+                backButton.disabled = false;
+            }
+
+            itemsToShow.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).forEach(item => {
+                const itemDiv = createElement('div', {
+                    className: `browser-item ${item.type}-item`,
+                    textContent: item.name,
+                });
+                itemDiv.dataset.name = item.name;
+                itemDiv.dataset.type = item.type;
+                if (saveName && item.name === saveName) itemDiv.classList.add('selected');
+
+                itemDiv.addEventListener('click', (e) => {
+                    const itemName = item.name;
+                    if (!e.ctrlKey && !e.metaKey) {
+                        clearBrowserSelection();
+                    }
+                    if (selectedBrowserItems.has(itemName)) {
+                        selectedBrowserItems.delete(itemName);
+                        itemDiv.classList.remove('selected');
+                    } else {
+                        selectedBrowserItems.add(itemName);
+                        itemDiv.classList.add('selected');
+                    }
+                    updateBrowserActionButtons();
+                });
+
+                itemDiv.addEventListener('dblclick', () => {
+                    if (item.type === 'folder') {
+                        currentView = { type: 'folder', name: item.name };
+                        clearBrowserSelection();
+                        refreshSeasonBrowser();
+                    } else if (item.type === 'season') {
+                        if (saveLoadReady) {
+                            saveName = item.name;
+                            Database.load().then(() => {
+                                deselectTrack();
+                                History.reset();
+                                refreshGUI();
+                            });
+                        }
+                    }
+                });
+                browserDiv.appendChild(itemDiv);
+            });
+            updateBrowserActionButtons();
+        }
+        
+        backButton.onclick = () => {
+            if (currentView.type === 'folder') {
+                currentView = { type: 'root' };
+                clearBrowserSelection();
+                refreshSeasonBrowser();
+            }
+        };
+
+        saveButton.onclick = () => {
+            if (SAVE_NAME_REGEX.test(saveNameTextbox.value)) {
+                saveName = saveNameTextbox.value;
+                Database.save().then(refreshSeasonBrowser);
+            } else alert('Save names must be 4-32 characters long and only contain letters, numbers, spaces, underscores, or hyphens.');
+        };
+
+        newSeasonButton.onclick = () => {
+            tracks = [];
+            saveName = undefined;
+            deselectTrack();
+            History.reset();
+            refreshGUI();
+        };
+
+        newFolderButton.onclick = () => {
+            const folderName = prompt("Enter new folder name (4-32 characters):");
+            if (folderName && SAVE_NAME_REGEX.test(folderName)) {
+                if (folders.some(f => f.name === folderName)) {
+                    alert('A folder with this name already exists.');
+                    return;
+                }
+                Database.saveFolders([{ name: folderName, seasons: [] }]).then(refreshSeasonBrowser);
+            } else if (folderName) {
+                alert('Invalid folder name. Please use 4-32 characters (letters, numbers, spaces, _, -).');
+            }
+        };
+        
+        deleteSelectionButton.onclick = async () => {
+            if (selectedBrowserItems.size === 0) return;
+            if (!confirm(`Are you sure you want to delete ${selectedBrowserItems.size} selected item(s)? This cannot be undone.`)) return;
+            
+            let foldersToDelete = [];
+            let seasonsToDelete = [];
+            
+            selectedBrowserItems.forEach(name => {
+                const itemEl = document.querySelector(`.browser-item[data-name="${name}"]`);
+                if(itemEl.dataset.type === 'folder') foldersToDelete.push(name);
+                else seasonsToDelete.push(name);
+            });
+
+            // delete folders (only if empty for simplicity)
+            for (const folderName of foldersToDelete) {
+                const folder = folders.find(f => f.name === folderName);
+                if (folder && folder.seasons.length > 0) {
+                    alert(`Folder "${folderName}" is not empty. Please move or delete its seasons first.`);
+                    continue;
+                }
+                await Database.deleteFolder(folderName);
+            }
+
+            // delete seasons
+            for (const seasonName of seasonsToDelete) {
+                await Database.delete(seasonName);
+                // remove from any folder it might be in
+                folders.forEach(f => {
+                    const index = f.seasons.indexOf(seasonName);
+                    if (index > -1) f.seasons.splice(index, 1);
+                });
+            }
+            await Database.saveFolders(folders);
+
+            clearBrowserSelection();
+            refreshSeasonBrowser();
+        };
+
+        moveSelectionButton.onclick = async () => {
+            if (selectedBrowserItems.size === 0) return;
+
+            const targetableFolders = folders.filter(f => currentView.type === 'root' || f.name !== currentView.name);
+            if (targetableFolders.length === 0) {
+                alert("No other folders to move to. Create a new folder first.");
+                return;
+            }
+
+            const destination = prompt("Move selection to folder:\n" + targetableFolders.map(f => `- ${f.name}`).join('\n'));
+            if (!destination) return;
+
+            const destFolder = folders.find(f => f.name.toLowerCase() === destination.toLowerCase());
+            if (!destFolder) {
+                alert(`Folder "${destination}" not found.`);
+                return;
+            }
+
+            const itemsToMove = [...selectedBrowserItems].filter(name => {
+                const el = document.querySelector(`.browser-item[data-name="${name}"]`);
+                return el && el.dataset.type === 'season';
+            });
+            
+            if ([...selectedBrowserItems].some(name => document.querySelector(`.browser-item[data-name="${name}"]`).dataset.type === 'folder')) {
+                alert("Moving folders is not yet supported. Please select only seasons to move.");
+                return;
+            }
+
+            // remove from old folders
+            folders.forEach(f => {
+                f.seasons = f.seasons.filter(s => !itemsToMove.includes(s));
+            });
+
+            // add to new folder
+            itemsToMove.forEach(itemName => {
+                if (!destFolder.seasons.includes(itemName)) {
+                    destFolder.seasons.push(itemName);
+                }
+            });
+
+            await Database.saveFolders(folders);
+            clearBrowserSelection();
+            refreshSeasonBrowser();
+        };
 
         async function refreshMapDropdown() {
             try {
@@ -1659,47 +1911,10 @@ const HypoTrack = (function () {
                 mapDropdown.replaceChildren(dropdownFragment);
                 mapDropdown.value = currentMapName || 'Default';
             } catch (error) {
-                console.error('Oops. Failed to refresh map dropdown:', error);
+                console.error('Jinkies! Failed to refresh map dropdown:', error);
                 mapDropdown.replaceChildren(dropdownOption('Default'));
                 mapDropdown.value = 'Default';
             }
-        }
-
-        saveNameTextbox.maxLength = 32;
-        const SAVE_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
-
-        saveButton.onclick = () => {
-            if (SAVE_NAME_REGEX.test(saveNameTextbox.value)) {
-                saveName = saveNameTextbox.value;
-                Database.save();
-                refreshGUI();
-            } else alert('Save names must be at least 4 characters long and only contain letters, numbers, spaces, underscores, or hyphens.');
-        };
-
-        loadDropdown.onchange = () => {
-            if (loadDropdown.value) {
-                saveName = loadDropdown.value;
-                Database.load().then(() => {
-                    deselectTrack();
-                    History.reset();
-                    refreshGUI();
-                });
-            }
-        };
-
-        newSeasonButton.onclick = () => {
-            tracks = [];
-            saveName = undefined;
-            History.reset();
-            refreshGUI();
-        };
-
-        async function refreshLoadDropdown() {
-            const saveList = await Database.list();
-            const dropdownFragment = new DocumentFragment();
-            saveList.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
-            loadDropdown.replaceChildren(dropdownFragment);
-            loadDropdown.value = saveName || '';
         }
 
         function refreshCategoryDropdown() {
@@ -1742,6 +1957,7 @@ const HypoTrack = (function () {
 
             refreshCategoryDropdown();
             refreshCustomCategoryList();
+            refreshSeasonBrowser();
 
             categorySelect.value = categoryToPlace;
             typeSelect.value = Object.keys(typeSelectData).find(k => typeSelectData[k] === typeToPlace);
@@ -1753,10 +1969,9 @@ const HypoTrack = (function () {
             altColorCheckbox.checked = useAltColors;
             smallDotCheckbox.checked = useSmallDots;
             autosaveCheckbox.checked = autosave;
-            saveButton.disabled = loadDropdown.disabled = newSeasonButton.disabled = !saveLoadReady;
+            saveButton.disabled = newSeasonButton.disabled = !saveLoadReady;
             saveNameTextbox.value = saveName || '';
 
-            refreshLoadDropdown();
             refreshMapDropdown();
             updateCoordinatesDisplay();
             requestRedraw();

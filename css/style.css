@@ -162,6 +162,11 @@ ul li {
 	border-radius: .4rem;
 }
 
+#ui-container div > div {
+  border-width: .1rem;
+  border-radius: 0;
+}
+
 #undo-redo, #export-container #export-buttons {
 	border: none;
 	display: flex;
