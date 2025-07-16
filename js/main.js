@@ -250,10 +250,12 @@ const HypoTrack = (function () {
 
     async function loadImages() {
         if (useCustomMap && currentMapName !== 'Default') {
-            try {
-                const mapData = await Database.loadMap(currentMapName);
-                if (mapData) {
-                    const blob = new Blob([mapData], { type: 'image/jpeg' });
+            // check localStorage first
+            const localMaps = getCustomMapsFromLocal();
+            if (localMaps[currentMapName]) {
+                try {
+                    const arrayBuffer = base64ToArrayBuffer(localMaps[currentMapName]);
+                    const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
                     const url = URL.createObjectURL(blob);
                     customMapImg = new Image();
                     customMapImg.decoding = 'async';
@@ -270,10 +272,37 @@ const HypoTrack = (function () {
                     });
                     loadedMapImg = true;
                     return;
+                } catch (error) {
+                    console.error('Failed to load custom map from localStorage:', error);
+                    useCustomMap = false;
                 }
-            } catch (error) {
-                console.error('Erro ao carregar mapa personalizado:', error);
-                useCustomMap = false;
+            } else {
+                // fallback to IndexedDB
+                try {
+                    const mapData = await Database.loadMap(currentMapName);
+                    if (mapData) {
+                        const blob = new Blob([mapData], { type: 'image/jpeg' });
+                        const url = URL.createObjectURL(blob);
+                        customMapImg = new Image();
+                        customMapImg.decoding = 'async';
+                        await new Promise((resolve, reject) => {
+                            customMapImg.onload = () => {
+                                URL.revokeObjectURL(url);
+                                resolve();
+                            };
+                            customMapImg.onerror = (err) => {
+                                URL.revokeObjectURL(url);
+                                reject(err);
+                            };
+                            customMapImg.src = url;
+                        });
+                        loadedMapImg = true;
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error loading custom map from IndexedDB:', error);
+                    useCustomMap = false;
+                }
             }
         }
 
@@ -370,6 +399,7 @@ const HypoTrack = (function () {
             let sy = img.height * Math.max(0, Math.min(1, (qn - mn) / (ms - mn)));
             let sh = img.height * Math.max(0, Math.min(1, (qs - mn) / (ms - mn))) - sy;
 
+            // Clamp to minimum size to avoid degenerate rectangles
             sw = Math.max(1, sw);
             sh = Math.max(1, sh);
 
@@ -378,16 +408,18 @@ const HypoTrack = (function () {
             let dy = (HEIGHT - topBound) * (qn - north) / (south - north) + topBound;
             let dh = (HEIGHT - topBound) * (qs - qn) / (south - north);
 
-            const roundedDx = Math.round(dx);
-            const roundedDy = Math.round(dy);
-            let roundedDw = Math.round(dx + dw) - roundedDx;
-            let roundedDh = Math.round(dy + dh) - roundedDy;
+            // clamp again on destination
+            let roundedDx = Math.round(dx);
+            let roundedDy = Math.round(dy);
+            let roundedDw = Math.max(1, Math.round(dx + dw) - roundedDx);
+            let roundedDh = Math.max(1, Math.round(dy + dh) - roundedDy);
 
             const scaleX = sw / dw;
             const scaleY = sh / dh;
             sw = roundedDw * scaleX;
             sh = roundedDh * scaleY;
 
+            // add a minimal overlap to avoid gaps at extreme zoom
             const overlap = 1;
             if (dw > 0 && dh > 0) {
                 roundedDw += overlap;
@@ -396,8 +428,17 @@ const HypoTrack = (function () {
                 sh += overlap * scaleY;
             }
 
-            if (sw > 0 && sh > 0 && roundedDx + roundedDw > 0 && roundedDx < WIDTH) {
+            // only draw if everything is valid and in bounds
+            if (
+                sw > 0 && sh > 0 &&
+                roundedDx + roundedDw > 0 && roundedDx < WIDTH &&
+                sx < img.width && sy < img.height
+            ) {
                 ctx.drawImage(img, sx, sy, sw, sh, roundedDx, roundedDy, roundedDw, roundedDh);
+            } else {
+                // fallback: fill with a placeholder color if zoom is too extreme
+                ctx.fillStyle = "#efefef";
+                ctx.fillRect(roundedDx, roundedDy, roundedDw, roundedDh);
             }
         }
 
@@ -959,7 +1000,7 @@ const HypoTrack = (function () {
                 await withLock(async () => {
                     tracks = (await db.saves.get(getKey())) || [];
                     tracks.forEach(track => track.forEach((point, i) => track[i] = Object.assign(new TrackPoint(), point)));
-                    
+
                     // mark spatial index for rebuild
                     needsIndexRebuild = true;
                 });
@@ -1311,6 +1352,54 @@ const HypoTrack = (function () {
         return result;
     }
 
+    const LOCAL_MAPS_KEY = 'hypo-track-local-custom-maps';
+
+    function saveCustomMapToLocal(name, data) {
+        const maps = getCustomMapsFromLocal();
+        const base64 = arrayBufferToBase64(data);
+        maps[name] = base64;
+        localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
+    }
+
+    function getCustomMapsFromLocal() {
+        try {
+            return JSON.parse(localStorage.getItem(LOCAL_MAPS_KEY) || '{}');
+        } catch {
+            return {};
+        }
+    }
+
+    function deleteCustomMapFromLocal(name) {
+        const maps = getCustomMapsFromLocal();
+        delete maps[name];
+        localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
+    }
+
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return btoa(binary);
+    }
+
+    /**
+     * Convert base64 string to ArrayBuffer.
+     * @param {string} b64
+     * @returns {ArrayBuffer}
+     */
+    function base64ToArrayBuffer(b64) {
+        const binary = atob(b64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
     window.onload = () => {
         init();
         const uiContainer = document.getElementById('ui-container');
@@ -1318,7 +1407,7 @@ const HypoTrack = (function () {
             console.error('UI container not found!');
             return;
         }
-        
+
         // for the folder UI
         const style = document.createElement('style');
         style.textContent = `
@@ -1452,7 +1541,7 @@ const HypoTrack = (function () {
         const saveloadContainer = div();
         saveloadContainer.id = 'saveload-container';
         mainFragment.appendChild(saveloadContainer);
-        
+
         const saveloadTitle = createElement('h3', { textContent: 'Season management' });
         saveloadTitle.style.cssText = 'margin: 0 0 .5rem 0;';
         saveloadContainer.appendChild(saveloadTitle);
@@ -1462,7 +1551,7 @@ const HypoTrack = (function () {
         saveNameTextbox.maxLength = 32;
         const saveButton = button('Save current', saveControls);
         saveloadContainer.appendChild(saveControls);
-        
+
         const browserHeader = div();
         browserHeader.id = 'browser-header';
         const backButton = button('..', new DocumentFragment());
@@ -1474,7 +1563,7 @@ const HypoTrack = (function () {
         const seasonBrowserDiv = div();
         seasonBrowserDiv.id = 'season-browser';
         saveloadContainer.appendChild(seasonBrowserDiv);
-        
+
         const browserActions = div();
         browserActions.id = 'browser-actions';
         const newFolderButton = button('New folder', new DocumentFragment());
@@ -1549,6 +1638,7 @@ const HypoTrack = (function () {
                         reader.onload = async () => {
                             try {
                                 await Database.saveMap(mapNamePrompt, new Uint8Array(reader.result));
+                                saveCustomMapToLocal(mapNamePrompt, reader.result);
                                 alert(`Map "${mapNamePrompt}" saved successfully.`);
                                 refreshMapDropdown();
                                 currentMapName = mapNamePrompt;
@@ -1584,6 +1674,7 @@ const HypoTrack = (function () {
             if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
                 try {
                     await Database.deleteMap(currentMapName);
+                    deleteCustomMapFromLocal(currentMapName); // Remove from localStorage too
                     alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
 
                     customMapImg = null;
@@ -1601,6 +1692,7 @@ const HypoTrack = (function () {
                 }
             }
         };
+
 
         mapsContainer.appendChild(mapsFragment);
 
@@ -1694,7 +1786,7 @@ const HypoTrack = (function () {
             createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' }),
             createElement('label', { htmlFor: 'compatibility-mode-checkbox', textContent: 'Compatibility mode', title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).' })
         );
-        
+
         // --- Folder management logic ---
         const SAVE_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
 
@@ -1716,7 +1808,7 @@ const HypoTrack = (function () {
 
             const browserDiv = document.getElementById('season-browser');
             browserDiv.innerHTML = '';
-            
+
             const assignedSaves = new Set(folders.flatMap(f => f.seasons));
             let itemsToShow = [];
 
@@ -1782,7 +1874,7 @@ const HypoTrack = (function () {
             });
             updateBrowserActionButtons();
         }
-        
+
         backButton.onclick = () => {
             if (currentView.type === 'folder') {
                 currentView = { type: 'root' };
@@ -1818,17 +1910,17 @@ const HypoTrack = (function () {
                 alert('Invalid folder name. Please use 4-32 characters (letters, numbers, spaces, _, -).');
             }
         };
-        
+
         deleteSelectionButton.onclick = async () => {
             if (selectedBrowserItems.size === 0) return;
             if (!confirm(`Are you sure you want to delete ${selectedBrowserItems.size} selected item(s)? This cannot be undone.`)) return;
-            
+
             let foldersToDelete = [];
             let seasonsToDelete = [];
-            
+
             selectedBrowserItems.forEach(name => {
                 const itemEl = document.querySelector(`.browser-item[data-name="${name}"]`);
-                if(itemEl.dataset.type === 'folder') foldersToDelete.push(name);
+                if (itemEl.dataset.type === 'folder') foldersToDelete.push(name);
                 else seasonsToDelete.push(name);
             });
 
@@ -1879,7 +1971,7 @@ const HypoTrack = (function () {
                 const el = document.querySelector(`.browser-item[data-name="${name}"]`);
                 return el && el.dataset.type === 'season';
             });
-            
+
             if ([...selectedBrowserItems].some(name => document.querySelector(`.browser-item[data-name="${name}"]`).dataset.type === 'folder')) {
                 alert("Moving folders is not yet supported. Please select only seasons to move.");
                 return;
@@ -1905,7 +1997,8 @@ const HypoTrack = (function () {
         async function refreshMapDropdown() {
             try {
                 const mapList = await Database.listMaps();
-                const options = ['Default', ...mapList];
+                const localMaps = Object.keys(getCustomMapsFromLocal());
+                const options = ['Default', ...mapList, ...localMaps];
                 const dropdownFragment = new DocumentFragment();
                 options.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
                 mapDropdown.replaceChildren(dropdownFragment);
