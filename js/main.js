@@ -443,25 +443,39 @@ const HypoTrack = (function () {
         }
 
         if (useCustomMap && customMapImg) {
-            const mapWest = -180;
-            const mapEast = 180;
             const mapNorth = 90;
             const mapSouth = -90;
 
-            const minLong = Math.floor((west - mvw) / 360) * 360;
-            const maxLong = Math.ceil((east + mvw) / 360) * 360;
+            // calculate the vertical part of the map to show
+            const sy = customMapImg.height * (mapNorth - north) / (mapNorth - mapSouth);
+            const sh = customMapImg.height * mvh / (mapNorth - mapSouth);
 
-            for (let offset = minLong; offset < maxLong; offset += 360) {
-                const qw = Math.max(west, mapWest + offset);
-                const qe = Math.min(east, mapEast + offset);
-                if (qw < qe) {
-                    drawSection(
-                        customMapImg,
-                        mapWest, mapEast, mapNorth, mapSouth,
-                        qw, qe, north, south,
-                        offset
-                    );
-                }
+            // calculate the horizontal part
+            // normalize west longitude to be in [0, 360) range for easier calculations
+            const normalizedWest = (west % 360 + 360) % 360;
+            const sx = customMapImg.width * normalizedWest / 360;
+            const sw = customMapImg.width * mvw / 360;
+
+            // calculate destination drawing parameters
+            const dy = topBound;
+            const dh = HEIGHT - topBound;
+            const dx = 0;
+            const dw = WIDTH;
+
+            // check if the view crosses the antimeridian (180° longitude)
+            if (sx + sw > customMapImg.width) {
+                // draw the first part (from sx to the right edge of the image)
+                const sw1 = customMapImg.width - sx;
+                const dw1 = dw * (sw1 / sw);
+                ctx.drawImage(customMapImg, sx, sy, sw1, sh, dx, dy, dw1, dh);
+
+                // draw the second part (from the left edge of the image, wrapping around)
+                const sw2 = sw - sw1;
+                const dw2 = dw - dw1;
+                ctx.drawImage(customMapImg, 0, sy, sw2, sh, dx + dw1, dy, dw2, dh);
+            } else {
+                // if no wrapping, draw the single section
+                ctx.drawImage(customMapImg, sx, sy, sw, sh, dx, dy, dw, dh);
             }
             return;
         }
