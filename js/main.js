@@ -153,7 +153,7 @@ const HypoTrack = (function () {
         currentMapName = 'Default', panLocation, zoomAmt = 0, tracks = [],
         categoryToPlace = 0, typeToPlace = 0, hoverDot, hoverTrack, selectedDot, selectedTrack,
         hideNonSelectedTracks = false, deleteTrackPoints = false, useAltColors = false,
-        useSmallDots = false, saveName, autosave = true, saveLoadReady = true,
+        dotSizeMultiplier = 1.0, saveName, autosave = true, saveLoadReady = true,
         isDragging = false, beginClickX, beginClickY, beginPanX, beginPanY,
         beginPointMoveLong, beginPointMoveLat, mouseMode, loadedMapImg = false,
         customCategories = [], masterCategories = [];
@@ -557,9 +557,9 @@ const HypoTrack = (function () {
     }
 
     function drawTracks() {
-        let dotSize = 2 * Math.pow(ZOOM_BASE, zoomAmt);
-        ctx.lineWidth = dotSize / 9;
-        if (useSmallDots) dotSize *= 9 / 15;
+        const baseDotSize = 2 * Math.pow(ZOOM_BASE, zoomAmt);
+        ctx.lineWidth = baseDotSize / 9;
+        const dotSize = baseDotSize * dotSizeMultiplier;
         const worldWidth = WIDTH * zoomMult();
         const viewWidth = mapViewWidth();
         const viewHeight = mapViewHeight();
@@ -1544,12 +1544,52 @@ const HypoTrack = (function () {
         deletePointsCheckbox.onchange = () => deleteTrackPoints = deletePointsCheckbox.checked;
         const altColorCheckbox = checkbox('alt-color-checkbox', 'Use accessible colors', checkboxFragment);
         altColorCheckbox.onchange = () => useAltColors = altColorCheckbox.checked;
-        const smallDotCheckbox = checkbox('small-dot-checkbox', 'Season summary mode', checkboxFragment);
-        smallDotCheckbox.onchange = () => useSmallDots = smallDotCheckbox.checked;
         const autosaveCheckbox = checkbox('autosave-checkbox', 'Autosave', checkboxFragment);
         autosaveCheckbox.checked = true;
         autosaveCheckbox.onchange = () => autosave = autosaveCheckbox.checked;
         buttons.appendChild(checkboxFragment);
+
+        const dotSizeContainer = div();
+        dotSizeContainer.id = 'dot-size-container';
+        dotSizeContainer.style.border = 'none';
+        dotSizeContainer.style.padding = '0';
+        dotSizeContainer.style.margin = '0';
+        const dotSizeSelect = createElement('select', { id: 'dot-size-select' });
+        const dotSizeOptions = {
+            'Tiny': 0.6, 'Small': 0.8, 'Normal': 1.0, 'Large': 1.5, 'X-Large': 2.0, 'Custom...': -1
+        };
+        for (const [text, value] of Object.entries(dotSizeOptions)) {
+            const opt = createElement('option', { textContent: text, value: value });
+            if (value === 1.0) opt.selected = true;
+            dotSizeSelect.appendChild(opt);
+        }
+
+        let lastValidDotSize = dotSizeMultiplier;
+        dotSizeSelect.onchange = () => {
+            const selectedValue = parseFloat(dotSizeSelect.value);
+            if (selectedValue === -1) { // "Custom..." is selected
+                const customValueStr = prompt('Enter custom dot size multiplier (e.g., 0.5 to 5.0):', lastValidDotSize);
+                if (customValueStr !== null) {
+                    const customValue = parseFloat(customValueStr);
+                    if (!isNaN(customValue) && customValue >= 0.1 && customValue <= 5.0) {
+                        dotSizeMultiplier = customValue;
+                        lastValidDotSize = customValue;
+                    } else {
+                        alert('Invalid size. Please enter a number between 0.1 and 5.0.');
+                        dotSizeSelect.value = lastValidDotSize;
+                    }
+                } else {
+                    dotSizeSelect.value = lastValidDotSize;
+                }
+            } else {
+                dotSizeMultiplier = selectedValue;
+                lastValidDotSize = selectedValue;
+            }
+            requestRedraw();
+        };
+
+        createLabeledElement('dot-size-select', 'Dot size:', dotSizeSelect, dotSizeContainer);
+        buttons.appendChild(dotSizeContainer);
 
         // Save/Load UI //
         const saveloadContainer = div();
@@ -2074,7 +2114,12 @@ const HypoTrack = (function () {
             deletePointsCheckbox.checked = deleteTrackPoints;
             modifyTrackPointButton.disabled = !selectedDot || !saveLoadReady;
             altColorCheckbox.checked = useAltColors;
-            smallDotCheckbox.checked = useSmallDots;
+
+            const dotSelect = document.getElementById('dot-size-select');
+            const currentMultiplier = dotSizeMultiplier;
+            const isPredefined = Object.values(dotSizeOptions).includes(currentMultiplier);
+            dotSelect.value = isPredefined ? currentMultiplier : -1;
+
             autosaveCheckbox.checked = autosave;
             saveButton.disabled = newSeasonButton.disabled = !saveLoadReady;
             saveNameTextbox.value = saveName || '';
@@ -2190,7 +2235,12 @@ const HypoTrack = (function () {
                 't': () => typeToPlace = 0, 'b': () => typeToPlace = 1, 'x': () => typeToPlace = 2,
                 ' ': () => deselectTrack(), 'h': () => selectedTrack && (hideNonSelectedTracks = !hideNonSelectedTracks),
                 'q': () => deleteTrackPoints = !deleteTrackPoints, 'l': () => useAltColors = !useAltColors,
-                'p': () => useSmallDots = !useSmallDots, 'a': () => autosave = !autosave
+                'p': () => {
+                    const select = document.getElementById('dot-size-select');
+                    select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+                    select.dispatchEvent(new Event('change'));
+                }, 
+                'a': () => autosave = !autosave
             };
 
             if ((k === 'z' || k === 'y') && e.ctrlKey) {
