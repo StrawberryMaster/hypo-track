@@ -452,8 +452,7 @@ const HypoTrack = (function () {
 
             // calculate the horizontal part
             // normalize west longitude to be in [0, 360) range for easier calculations
-            const normalizedWest = (west % 360 + 360) % 360;
-            const sx = customMapImg.width * normalizedWest / 360;
+            const sx = customMapImg.width * (west + 180) / 360;
             const sw = customMapImg.width * mvw / 360;
 
             // calculate destination drawing parameters
