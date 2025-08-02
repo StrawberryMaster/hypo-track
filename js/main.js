@@ -250,59 +250,46 @@ const HypoTrack = (function () {
 
     async function loadImages() {
         if (useCustomMap && currentMapName !== 'Default') {
-            // check localStorage first
-            const localMaps = getCustomMapsFromLocal();
-            if (localMaps[currentMapName]) {
-                try {
-                    const arrayBuffer = base64ToArrayBuffer(localMaps[currentMapName]);
-                    const blob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+            try {
+                // check IndexedDB first
+                let mapData = await Database.loadMap(currentMapName);
+
+                // then check localStorage for migration
+                if (!mapData) {
+                    const localMaps = JSON.parse(localStorage.getItem(LOCAL_MAPS_KEY) || '{}');
+                    if (localMaps[currentMapName]) {
+                        console.log(`Migrating map "${currentMapName}" from localStorage to IndexedDB...`);
+                        const arrayBuffer = base64ToArrayBuffer(localMaps[currentMapName]);
+
+                        await Database.saveMap(currentMapName, new Uint8Array(arrayBuffer));
+                        delete localMaps[currentMapName];
+                        localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(localMaps));
+
+                        mapData = new Uint8Array(arrayBuffer);
+                    }
+                }
+
+                // found data? load it
+                if (mapData) {
+                    const blob = new Blob([mapData], { type: 'image/jpeg' }); // assume jpeg, but modern browsers are good at detecting type
                     const url = URL.createObjectURL(blob);
                     customMapImg = new Image();
                     customMapImg.decoding = 'async';
                     await new Promise((resolve, reject) => {
-                        customMapImg.onload = () => {
-                            URL.revokeObjectURL(url);
-                            resolve();
-                        };
-                        customMapImg.onerror = (err) => {
-                            URL.revokeObjectURL(url);
-                            reject(err);
-                        };
+                        customMapImg.onload = () => { URL.revokeObjectURL(url); resolve(); };
+                        customMapImg.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
                         customMapImg.src = url;
                     });
                     loadedMapImg = true;
                     return;
-                } catch (error) {
-                    console.error('Failed to load custom map from localStorage:', error);
+                } else {
+                    // fallback if no map data found
+                    console.warn(`Custom map "${currentMapName}" not found. Falling back to default.`);
                     useCustomMap = false;
                 }
-            } else {
-                // fallback to IndexedDB
-                try {
-                    const mapData = await Database.loadMap(currentMapName);
-                    if (mapData) {
-                        const blob = new Blob([mapData], { type: 'image/jpeg' });
-                        const url = URL.createObjectURL(blob);
-                        customMapImg = new Image();
-                        customMapImg.decoding = 'async';
-                        await new Promise((resolve, reject) => {
-                            customMapImg.onload = () => {
-                                URL.revokeObjectURL(url);
-                                resolve();
-                            };
-                            customMapImg.onerror = (err) => {
-                                URL.revokeObjectURL(url);
-                                reject(err);
-                            };
-                            customMapImg.src = url;
-                        });
-                        loadedMapImg = true;
-                        return;
-                    }
-                } catch (error) {
-                    console.error('Error loading custom map from IndexedDB:', error);
-                    useCustomMap = false;
-                }
+            } catch (error) {
+                console.error('Error loading custom map:', error);
+                useCustomMap = false;
             }
         }
 
@@ -346,7 +333,6 @@ const HypoTrack = (function () {
                 })
             );
 
-            // revoke URLs after all images are loaded
             urls.forEach(url => URL.revokeObjectURL(url));
 
             Object.assign(mapImgs, Object.fromEntries(
@@ -1365,28 +1351,8 @@ const HypoTrack = (function () {
         return result;
     }
 
+    // do not delete. this is the old local storage key for custom maps
     const LOCAL_MAPS_KEY = 'hypo-track-local-custom-maps';
-
-    function saveCustomMapToLocal(name, data) {
-        const maps = getCustomMapsFromLocal();
-        const base64 = arrayBufferToBase64(data);
-        maps[name] = base64;
-        localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
-    }
-
-    function getCustomMapsFromLocal() {
-        try {
-            return JSON.parse(localStorage.getItem(LOCAL_MAPS_KEY) || '{}');
-        } catch {
-            return {};
-        }
-    }
-
-    function deleteCustomMapFromLocal(name) {
-        const maps = getCustomMapsFromLocal();
-        delete maps[name];
-        localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(maps));
-    }
 
     function arrayBufferToBase64(buffer) {
         let binary = '';
@@ -1676,46 +1642,23 @@ const HypoTrack = (function () {
             }
         };
 
-        const uploadMapButton = button('Upload map', mapsFragment);
-        uploadMapButton.onclick = () => {
-            const fileInput = createElement('input', { type: 'file', accept: 'image/*' });
-            fileInput.style.display = 'none';
-            fileInput.onchange = () => {
-                if (fileInput.files.length > 0) {
-                    const file = fileInput.files[0];
-                    const mapNamePrompt = prompt('Select a name for the map (4-32 characters, letters, numbers, spaces, _ or -):', currentMapName);
-                    const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
+        const uploadMapButton = button('Upload new map', mapsFragment);
+        const mapUploaderDiv = div();
+        mapUploaderDiv.id = 'map-uploader';
+        mapUploaderDiv.style.cssText = 'display: none; border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 4px; background: #f9f9f9;';
 
-                    if (mapNamePrompt && MAP_NAME_REGEX.test(mapNamePrompt)) {
-                        const reader = new FileReader();
-                        reader.onload = async () => {
-                            try {
-                                await Database.saveMap(mapNamePrompt, new Uint8Array(reader.result));
-                                saveCustomMapToLocal(mapNamePrompt, reader.result);
-                                alert(`Map "${mapNamePrompt}" saved successfully.`);
-                                refreshMapDropdown();
-                                currentMapName = mapNamePrompt;
-                                useCustomMap = true;
-                                customMapCheckbox.checked = true;
-                                loadImages().then(() => {
-                                    loadedMapImg = true;
-                                    requestRedraw();
-                                });
-                            } catch (error) {
-                                alert(`Jinkies! Error saving map: ${error.message}`);
-                            }
-                        };
-                        reader.readAsArrayBuffer(file);
-                    } else {
-                        alert('Invalid map name. Please use 4-32 characters, letters, numbers, spaces, _ or -.');
-                    }
-                    fileInput.value = "";
-                }
-            };
-            document.body.appendChild(fileInput);
-            fileInput.click();
-            document.body.removeChild(fileInput);
-        };
+        const uploaderContent = `
+            <label for="new-map-name">Map name:</label>
+            <input type="text" id="new-map-name" placeholder="4-32 chars: a-z, 0-9, _, -">
+            <span id="map-name-error" style="color: red; font-size: 12px; display: block;"></span>
+            <input type="file" id="new-map-file" accept="image/*" style="margin-top: 8px;">
+            <div style="margin-top: 10px;">
+                <button id="save-new-map-btn" class="btn">Save</button>
+                <button id="cancel-new-map-btn" class="btn">Cancel</button>
+            </div>
+        `;
+        mapUploaderDiv.innerHTML = uploaderContent;
+        mapsFragment.appendChild(mapUploaderDiv);
 
         const deleteMapButton = button('Delete map', mapsFragment);
         deleteMapButton.onclick = async () => {
@@ -1727,7 +1670,6 @@ const HypoTrack = (function () {
             if (confirm(`You sure you want to delete the map "${currentMapName}"?`)) {
                 try {
                     await Database.deleteMap(currentMapName);
-                    deleteCustomMapFromLocal(currentMapName); // Remove from localStorage too
                     alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
 
                     customMapImg = null;
@@ -2050,12 +1992,21 @@ const HypoTrack = (function () {
         async function refreshMapDropdown() {
             try {
                 const mapList = await Database.listMaps();
-                const localMaps = Object.keys(getCustomMapsFromLocal());
-                const options = ['Default', ...mapList, ...localMaps];
+                const uniqueMaps = [...new Set(mapList)];
+                const options = ['Default', ...uniqueMaps];
+
                 const dropdownFragment = new DocumentFragment();
                 options.forEach(item => dropdownFragment.appendChild(dropdownOption(item)));
+
                 mapDropdown.replaceChildren(dropdownFragment);
-                mapDropdown.value = currentMapName || 'Default';
+
+                // ensure the selected value is still valid
+                if (options.includes(currentMapName)) {
+                    mapDropdown.value = currentMapName;
+                } else {
+                    currentMapName = 'Default';
+                    mapDropdown.value = 'Default';
+                }
             } catch (error) {
                 console.error('Jinkies! Failed to refresh map dropdown:', error);
                 mapDropdown.replaceChildren(dropdownOption('Default'));
@@ -2129,6 +2080,63 @@ const HypoTrack = (function () {
         };
 
         uiContainer.appendChild(mainFragment);
+
+        uploadMapButton.onclick = () => {
+            mapUploaderDiv.style.display = mapUploaderDiv.style.display === 'none' ? 'block' : 'none';
+            document.getElementById('map-name-error').textContent = '';
+        };
+
+        const mapNameInput = document.getElementById('new-map-name');
+        mapNameInput.addEventListener('focus', () => suppresskeybinds = true, { passive: true });
+        mapNameInput.addEventListener('blur', () => suppresskeybinds = false, { passive: true });
+
+        document.getElementById('cancel-new-map-btn').onclick = () => {
+            mapUploaderDiv.style.display = 'none';
+        };
+
+        document.getElementById('save-new-map-btn').onclick = async () => {
+            const nameInput = document.getElementById('new-map-name');
+            const fileInput = document.getElementById('new-map-file');
+            const errorSpan = document.getElementById('map-name-error');
+            const mapName = nameInput.value.trim();
+            const file = fileInput.files[0];
+
+            errorSpan.textContent = '';
+
+            const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
+            if (!MAP_NAME_REGEX.test(mapName)) {
+                errorSpan.textContent = 'Invalid name. Use 4-32 letters, numbers, spaces, _, or -.';
+                return;
+            }
+            if (!file) {
+                errorSpan.textContent = 'Please select a file.';
+                return;
+            }
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                await Database.saveMap(mapName, new Uint8Array(arrayBuffer));
+
+                mapUploaderDiv.style.display = 'none';
+                nameInput.value = '';
+                fileInput.value = '';
+
+                await refreshMapDropdown();
+                currentMapName = mapName;
+                mapDropdown.value = mapName;
+                useCustomMap = true;
+                customMapCheckbox.checked = true;
+
+                loadImages().then(() => {
+                    loadedMapImg = true;
+                    requestRedraw();
+                });
+
+            } catch (error) {
+                console.error("Jinkies! Error saving map:", error);
+                errorSpan.textContent = `Jinkies! ${error.message}. Check console.`;
+            }
+        };
 
         // --- Category Editor Modal Logic ---
         function createCategoryEditorModal() {
@@ -2238,7 +2246,7 @@ const HypoTrack = (function () {
                     const select = document.getElementById('dot-size-select');
                     select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
                     select.dispatchEvent(new Event('change'));
-                }, 
+                },
                 'a': () => autosave = !autosave
             };
 
