@@ -176,6 +176,13 @@ const HypoTrack = (function () {
     // zoom UI controls
     let zoomInBtnEl, zoomOutBtnEl, zoomSliderEl;
 
+    // touch state
+    let isTouching = false;
+    let touchStartX = 0, touchStartY = 0;
+    let touchLastX = 0, touchLastY = 0;
+    let touchStartedInside = false;
+    let pinch = { active: false, startDist: 0, startZoom: 0, startCenterX: 0, startCenterY: 0 };
+
     function regenerateMasterCategories() {
         masterCategories = [...DEFAULT_CATEGORIES, ...customCategories];
         if (refreshGUI) {
@@ -215,6 +222,8 @@ const HypoTrack = (function () {
 
         container.style.position = 'relative';
         container.appendChild(canvas);
+        // prevent browser page panning/zooming while touching the canvas
+        canvas.style.touchAction = 'none';
         createCoordinatesTab(container);
         createZoomControls(container);
 
@@ -703,6 +712,48 @@ const HypoTrack = (function () {
         setZoomAbsolute(zoomAmt + delta, pivotX, pivotY);
     }
 
+    // helpers for touch handling
+    function getOffsetFromTouch(touch) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: touch.clientX - rect.left,
+            y: touch.clientY - rect.top
+        };
+    }
+
+    function isValidPositionXY(x, y) {
+        return x > 0 && x < WIDTH && y > (HEIGHT - WIDTH / 2) && y < HEIGHT;
+    }
+
+    function distanceBetweenTouches(t1, t2) {
+        const dx = t2.clientX - t1.clientX;
+        const dy = t2.clientY - t1.clientY;
+        return Math.hypot(dx, dy);
+    }
+
+    function midpointBetweenTouches(t1, t2) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (t1.clientX + t2.clientX) / 2 - rect.left,
+            y: (t1.clientY + t2.clientY) / 2 - rect.top
+        };
+    }
+
+    function pickNearestPoint(x, y, radius) {
+        buildSpatialIndex();
+        const range = new CircleRange(x, y, radius);
+        const candidates = spatialIndex.query(range);
+        if (!candidates || candidates.length === 0) return null;
+        let best = candidates[0];
+        let bestDist = Math.hypot(best.screenX - x, best.screenY - y);
+        for (let i = 1; i < candidates.length; i++) {
+            const c = candidates[i];
+            const d = Math.hypot(c.screenX - x, c.screenY - y);
+            if (d < bestDist) { best = c; bestDist = d; }
+        }
+        return best;
+    }
+
     // Mouse UI/interaction //
     function setupEventListeners() {
         canvas.addEventListener('wheel', (evt) => {
@@ -793,6 +844,155 @@ const HypoTrack = (function () {
                 requestRedraw();
             }
         });
+
+        // touch interactions
+        canvas.addEventListener('touchstart', (evt) => {
+            if (!loadedMapImg || !panLocation) return;
+            if (evt.touches.length === 0) return;
+            evt.preventDefault();
+
+            if (evt.touches.length === 1) {
+                const { x, y } = getOffsetFromTouch(evt.touches[0]);
+                touchStartX = touchLastX = x;
+                touchStartY = touchLastY = y;
+                touchStartedInside = isValidPositionXY(x, y);
+                if (!touchStartedInside) return;
+
+                isTouching = true;
+                beginClickX = x;
+                beginClickY = y;
+                isDragging = true;
+
+                // emulate hover for selection
+                const nearest = pickNearestPoint(x, y, Math.pow(ZOOM_BASE, zoomAmt));
+                if (nearest) {
+                    hoverTrack = nearest.track;
+                    hoverDot = nearest.point;
+                } else {
+                    hoverTrack = hoverDot = undefined;
+                }
+
+                if (!saveLoadReady) {
+                    mouseMode = 0;
+                } else if (deleteTrackPoints) {
+                    mouseMode = 3;
+                } else if (hoverTrack && hoverTrack === selectedTrack && hoverDot && hoverDot === selectedDot) {
+                    mouseMode = 2;
+                    beginPointMoveLong = selectedDot.long;
+                    beginPointMoveLat = selectedDot.lat;
+                } else {
+                    mouseMode = 0;
+                }
+
+                // keep hover visuals responsive
+                canvas.mouseX = x;
+                canvas.mouseY = y;
+                requestRedraw();
+            } else if (evt.touches.length >= 2) {
+                // start pinch
+                const [t1, t2] = [evt.touches[0], evt.touches[1]];
+                pinch.active = true;
+                pinch.startDist = distanceBetweenTouches(t1, t2);
+                pinch.startZoom = zoomAmt;
+                const mid = midpointBetweenTouches(t1, t2);
+                pinch.startCenterX = mid.x;
+                pinch.startCenterY = mid.y;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (evt) => {
+            if (!loadedMapImg || !panLocation) return;
+            if (evt.touches.length === 0) return;
+            evt.preventDefault();
+
+            if (evt.touches.length >= 2 && pinch.active) {
+                const [t1, t2] = [evt.touches[0], evt.touches[1]];
+                const dist = distanceBetweenTouches(t1, t2);
+                const scale = dist / (pinch.startDist || dist);
+                const deltaZoom = Math.log(scale) / Math.log(ZOOM_BASE);
+                const mid = midpointBetweenTouches(t1, t2);
+                setZoomAbsolute(pinch.startZoom + deltaZoom, mid.x, mid.y);
+                return;
+            }
+
+            // single-finger pan or move point
+            if (evt.touches.length === 1 && isTouching && touchStartedInside) {
+                const { x, y } = getOffsetFromTouch(evt.touches[0]);
+                canvas.mouseX = x;
+                canvas.mouseY = y;
+
+                if (mouseMode === 2 && selectedDot) {
+                    // moving a point
+                    const fakeEvt = { offsetX: x, offsetY: y };
+                    selectedDot.long = mouseLong(fakeEvt);
+                    selectedDot.lat = mouseLat(fakeEvt);
+                    requestRedraw();
+                    touchLastX = x; touchLastY = y;
+                    return;
+                }
+
+                // pan after threshold
+                if (mouseMode === 1 || Math.hypot(x - beginClickX, y - beginClickY) >= 20) {
+                    mouseMode = 1;
+                    if (beginPanX === undefined) beginPanX = panLocation.long;
+                    if (beginPanY === undefined) beginPanY = panLocation.lat;
+
+                    const mvw = mapViewWidth(), mvh = mapViewHeight();
+                    panLocation.long = normalizeLongitude(beginPanX - mvw * (x - beginClickX) / WIDTH);
+                    panLocation.lat = constrainLatitude(beginPanY + mvh * (y - beginClickY) / (WIDTH / 2), mvh);
+                    requestRedraw();
+                }
+
+                touchLastX = x; touchLastY = y;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (evt) => {
+            if (!loadedMapImg || !panLocation) return;
+            evt.preventDefault();
+
+            if (evt.touches.length < 2 && pinch.active) {
+                // end pinch
+                pinch.active = false;
+            }
+
+            if (!isTouching) return;
+
+            isDragging = false;
+            isTouching = false;
+
+            // If user tapped (no significant move) and not in drag/move modes, add/select or delete
+            const moved = Math.hypot(touchLastX - touchStartX, touchLastY - touchStartY);
+            const fakeEvt = { offsetX: touchLastX, offsetY: touchLastY };
+
+            if (mouseMode === 0 && moved < 20) {
+                // emulate hover selection
+                const nearest = pickNearestPoint(touchLastX, touchLastY, Math.pow(ZOOM_BASE, zoomAmt));
+                if (nearest) {
+                    hoverTrack = nearest.track;
+                    hoverDot = nearest.point;
+                } else {
+                    hoverTrack = hoverDot = undefined;
+                }
+                handleAddPoint(fakeEvt);
+            } else if (mouseMode === 2 && selectedDot) {
+                handleMovePoint(fakeEvt);
+            } else if (mouseMode === 3) {
+                handleDeletePoint(fakeEvt);
+            }
+
+            beginClickX = beginClickY = beginPanX = beginPanY = undefined;
+            if (refreshGUI) refreshGUI();
+            requestRedraw();
+        }, { passive: false });
+
+        canvas.addEventListener('touchcancel', (evt) => {
+            evt.preventDefault();
+            pinch.active = false;
+            isTouching = false;
+            isDragging = false;
+            beginClickX = beginClickY = beginPanX = beginPanY = undefined;
+        }, { passive: false });
     }
 
     function handleAddPoint(evt) {
