@@ -182,6 +182,8 @@ const HypoTrack = (function () {
     let touchLastX = 0, touchLastY = 0;
     let touchStartedInside = false;
     let pinch = { active: false, startDist: 0, startZoom: 0, startCenterX: 0, startCenterY: 0 };
+    // suppress accidental taps after pinch or multi-touch
+    let suppressNextTap = false;
 
     function regenerateMasterCategories() {
         masterCategories = [...DEFAULT_CATEGORIES, ...customCategories];
@@ -852,6 +854,8 @@ const HypoTrack = (function () {
             evt.preventDefault();
 
             if (evt.touches.length === 1) {
+                // fresh single-touch: allow tap unless it turns into pinch later
+                suppressNextTap = false;
                 const { x, y } = getOffsetFromTouch(evt.touches[0]);
                 touchStartX = touchLastX = x;
                 touchStartY = touchLastY = y;
@@ -889,7 +893,8 @@ const HypoTrack = (function () {
                 canvas.mouseY = y;
                 requestRedraw();
             } else if (evt.touches.length >= 2) {
-                // start pinch
+                // start pinch; ensure we do not create a dot on gesture end
+                suppressNextTap = true;
                 const [t1, t2] = [evt.touches[0], evt.touches[1]];
                 pinch.active = true;
                 pinch.startDist = distanceBetweenTouches(t1, t2);
@@ -906,6 +911,8 @@ const HypoTrack = (function () {
             evt.preventDefault();
 
             if (evt.touches.length >= 2 && pinch.active) {
+                // still pinching; keep suppressing any tap
+                suppressNextTap = true;
                 const [t1, t2] = [evt.touches[0], evt.touches[1]];
                 const dist = distanceBetweenTouches(t1, t2);
                 const scale = dist / (pinch.startDist || dist);
@@ -951,9 +958,22 @@ const HypoTrack = (function () {
             if (!loadedMapImg || !panLocation) return;
             evt.preventDefault();
 
+            // if a pinch was active and fewer than two touches remain, stop pinching
             if (evt.touches.length < 2 && pinch.active) {
-                // end pinch
                 pinch.active = false;
+            }
+
+            const isLastFinger = evt.touches.length === 0;
+
+            // if a pinch/multi-touch occurred during this gesture, suppress any tap actions on last finger up
+            if (isLastFinger && suppressNextTap) {
+                suppressNextTap = false;
+                isDragging = false;
+                isTouching = false;
+                beginClickX = beginClickY = beginPanX = beginPanY = undefined;
+                if (refreshGUI) refreshGUI();
+                requestRedraw();
+                return;
             }
 
             if (!isTouching) return;
@@ -989,6 +1009,7 @@ const HypoTrack = (function () {
         canvas.addEventListener('touchcancel', (evt) => {
             evt.preventDefault();
             pinch.active = false;
+            suppressNextTap = false;
             isTouching = false;
             isDragging = false;
             beginClickX = beginClickY = beginPanX = beginPanY = undefined;
