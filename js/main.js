@@ -173,6 +173,9 @@ const HypoTrack = (function () {
     const ZOOM_BASE = 1.25;
     const VIEW_HEIGHT_RATIO = 0.5;
 
+    // zoom UI controls
+    let zoomInBtnEl, zoomOutBtnEl, zoomSliderEl;
+
     function regenerateMasterCategories() {
         masterCategories = [...DEFAULT_CATEGORIES, ...customCategories];
         if (refreshGUI) {
@@ -213,6 +216,7 @@ const HypoTrack = (function () {
         container.style.position = 'relative';
         container.appendChild(canvas);
         createCoordinatesTab(container);
+        createZoomControls(container);
 
         ctx = canvas.getContext('2d');
 
@@ -672,6 +676,33 @@ const HypoTrack = (function () {
         }
     }
 
+    // centralized zoom helpers
+    function setZoomAbsolute(newZoomAmt, pivotX = WIDTH / 2, pivotY = (HEIGHT - WIDTH * VIEW_HEIGHT_RATIO) + (WIDTH * VIEW_HEIGHT_RATIO) / 2) {
+        const oldViewW = mapViewWidth();
+        const oldViewH = mapViewHeight();
+        const clamped = Math.max(0, Math.min(15, newZoomAmt));
+
+        // compute new view
+        const newViewW = 360 / Math.pow(ZOOM_BASE, clamped);
+        const newViewH = 180 / Math.pow(ZOOM_BASE, clamped);
+
+        // adjust pan to keep pivot in place
+        const topBound = HEIGHT - WIDTH * VIEW_HEIGHT_RATIO;
+        panLocation.long += (oldViewW - newViewW) * (pivotX / WIDTH);
+        panLocation.lat -= (oldViewH - newViewH) * ((pivotY - topBound) / (WIDTH * VIEW_HEIGHT_RATIO));
+
+        panLocation.long = normalizeLongitude(panLocation.long);
+        panLocation.lat = constrainLatitude(panLocation.lat, newViewH);
+
+        zoomAmt = clamped;
+        if (zoomSliderEl) zoomSliderEl.value = String(zoomAmt);
+        requestRedraw();
+    }
+
+    function setZoomRelative(delta, pivotX, pivotY) {
+        setZoomAbsolute(zoomAmt + delta, pivotX, pivotY);
+    }
+
     // Mouse UI/interaction //
     function setupEventListeners() {
         canvas.addEventListener('wheel', (evt) => {
@@ -679,16 +710,7 @@ const HypoTrack = (function () {
             if (!isValidMousePosition(evt) || !loadedMapImg || !panLocation) return;
 
             const zoomSensitivity = 1 / 125;
-            const oldViewW = mapViewWidth(), oldViewH = mapViewHeight();
-            zoomAmt = Math.max(0, Math.min(15, zoomAmt - evt.deltaY * zoomSensitivity));
-            const newViewW = mapViewWidth(), newViewH = mapViewHeight();
-
-            panLocation.long += (oldViewW - newViewW) * evt.offsetX / WIDTH;
-            panLocation.lat -= (oldViewH - newViewH) * (evt.offsetY - (HEIGHT - WIDTH / 2)) / (WIDTH / 2);
-            panLocation.long = normalizeLongitude(panLocation.long);
-            panLocation.lat = constrainLatitude(panLocation.lat, newViewH);
-
-            requestRedraw();
+            setZoomRelative(-evt.deltaY * zoomSensitivity, evt.offsetX, evt.offsetY);
         }, { passive: false });
 
         canvas.addEventListener('mousedown', (evt) => {
@@ -1804,6 +1826,7 @@ const HypoTrack = (function () {
             const browserDiv = document.getElementById('season-browser');
             browserDiv.innerHTML = '';
 
+           
             const assignedSaves = new Set(folders.flatMap(f => f.seasons));
             let itemsToShow = [];
 
@@ -2076,6 +2099,8 @@ const HypoTrack = (function () {
 
             refreshMapDropdown();
             updateCoordinatesDisplay();
+            // keep zoom slider in sync
+            if (zoomSliderEl) zoomSliderEl.value = String(zoomAmt);
             requestRedraw();
         };
 
@@ -2329,6 +2354,66 @@ const HypoTrack = (function () {
             .btn-small { padding: 2px 4px; font-size: 10px; margin-left: 4px; }
         `;
         document.head.appendChild(style);
+    }
+
+    // zoom controls overlay
+    function createZoomControls(container) {
+        const wrap = document.createElement('div');
+        wrap.id = 'zoom-controls';
+        wrap.style.cssText = `
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0,0,0,0.6);
+            padding: 6px 8px;
+            border-radius: 6px;
+            z-index: 1000;
+            color: #fff;
+            backdrop-filter: blur(3px);
+            user-select: none;
+        `;
+
+        const btnStyle = `
+            background: #2c2c2c; color: #fff; border: 1px solid #555; border-radius: 4px;
+            width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 16px; line-height: 1; cursor: pointer;
+        `;
+
+        zoomOutBtnEl = document.createElement('button');
+        zoomOutBtnEl.type = 'button';
+        zoomOutBtnEl.textContent = '−';
+        zoomOutBtnEl.style.cssText = btnStyle;
+
+        zoomInBtnEl = document.createElement('button');
+        zoomInBtnEl.type = 'button';
+        zoomInBtnEl.textContent = '+';
+        zoomInBtnEl.style.cssText = btnStyle;
+
+        zoomSliderEl = document.createElement('input');
+        zoomSliderEl.type = 'range';
+        zoomSliderEl.min = '0';
+        zoomSliderEl.max = '15';
+        zoomSliderEl.step = '0.25';
+        zoomSliderEl.value = String(zoomAmt);
+        zoomSliderEl.style.cssText = `
+            width: 140px;
+            accent-color: #6ec1ea;
+        `;
+
+        wrap.appendChild(zoomOutBtnEl);
+        wrap.appendChild(zoomSliderEl);
+        wrap.appendChild(zoomInBtnEl);
+        container.appendChild(wrap);
+
+        const pivotX = WIDTH / 2;
+        const pivotY = (HEIGHT - WIDTH * VIEW_HEIGHT_RATIO) + (WIDTH * VIEW_HEIGHT_RATIO) / 2;
+
+        zoomOutBtnEl.addEventListener('click', () => setZoomRelative(-0.5, pivotX, pivotY), { passive: true });
+        zoomInBtnEl.addEventListener('click', () => setZoomRelative(0.5, pivotX, pivotY), { passive: true });
+        zoomSliderEl.addEventListener('input', () => setZoomAbsolute(parseFloat(zoomSliderEl.value), pivotX, pivotY), { passive: true });
     }
 
     function deselectTrack() {
