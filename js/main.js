@@ -2479,6 +2479,40 @@ const HypoTrack = (function () {
 
         document.addEventListener('keydown', (e) => {
             if (suppresskeybinds || document.getElementById('category-editor-modal').style.display === 'flex') return;
+
+            // handle arrow key point nudging
+            if (selectedDot && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                const nudgeAmount = 0.01;
+                const originalLong = selectedDot.long;
+                const originalLat = selectedDot.lat;
+
+                switch (e.key) {
+                    case 'ArrowUp': selectedDot.lat += nudgeAmount; break;
+                    case 'ArrowDown': selectedDot.lat -= nudgeAmount; break;
+                    case 'ArrowLeft': selectedDot.long -= nudgeAmount; break;
+                    case 'ArrowRight': selectedDot.long += nudgeAmount; break;
+                }
+
+                selectedDot.lat = constrainLatitude(selectedDot.lat, mapViewHeight());
+                selectedDot.long = normalizeLongitude(selectedDot.long);
+
+                History.record(History.ActionTypes.movePoint, {
+                    trackIndex: tracks.indexOf(selectedTrack),
+                    pointIndex: selectedTrack.indexOf(selectedDot),
+                    long0: originalLong,
+                    lat0: originalLat,
+                    long1: selectedDot.long,
+                    lat1: selectedDot.lat
+                });
+
+                if (autosave) Database.save();
+                needsIndexRebuild = true;
+                requestRedraw();
+                if (refreshGUI) refreshGUI();
+                return;
+            }
+
             const k = e.key.toLowerCase();
             const keyActions = {
                 'd': () => categoryToPlace = 0, 's': () => categoryToPlace = 1,
