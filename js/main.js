@@ -1020,6 +1020,7 @@ const HypoTrack = (function () {
         if (hoverTrack) {
             selectedTrack = hoverTrack;
             selectedDot = hoverDot;
+            if (refreshGUI) refreshGUI();
             return;
         }
 
@@ -1274,7 +1275,8 @@ const HypoTrack = (function () {
             addPoint: 0,
             movePoint: 1,
             modifyPoint: 2,
-            deletePoint: 3
+            deletePoint: 3,
+            setTrackDate: 4
         };
 
         function undo() {
@@ -1309,6 +1311,10 @@ const HypoTrack = (function () {
                 } else track = tracks[d.trackIndex];
                 const point = new TrackPoint(d.long, d.lat, d.cat, d.type);
                 track.splice(d.pointIndex, 0, point);
+            } else if (t === ActionTypes.setTrackDate) {
+                const track = tracks[d.trackIndex];
+                track.startDate = d.oldStartDate;
+                track.startTime = d.oldStartTime;
             }
 
             redoItems.push(action);
@@ -1352,6 +1358,10 @@ const HypoTrack = (function () {
                     tracks.splice(d.trackIndex, 1);
                     if (track === selectedTrack) deselectTrack();
                 }
+            } else if (t === ActionTypes.setTrackDate) {
+                const track = tracks[d.trackIndex];
+                track.startDate = d.newStartDate;
+                track.startTime = d.newStartTime;
             }
 
             undoItems.push(action);
@@ -1532,23 +1542,46 @@ const HypoTrack = (function () {
     }
 
     function exportHURDAT(decimalPlaces = 1) {
-        const year = new Date().getFullYear();
         const parts = [];
         const compatibilityMode = document.getElementById('compatibility-mode-checkbox')?.checked || false;
 
         tracks.forEach((track, index) => {
             if (track.length === 0) return;
-            const stormId = 'MT' + padNumber(index + 1, 2) + year;
+
+            const stormId = 'MT' + padNumber(index + 1, 2) + (track.startDate ? track.startDate.substring(0, 4) : new Date().getFullYear());
             const header = HURDAT_FORMATS.HEADER(stormId, track.length);
+
             const entries = track.map((point, i) => {
-                const day = Math.floor(i / 4) + 1;
-                const month = Math.floor(day / 31) + 1;
-                const dayOfMonth = day % 31 || 31;
-                const timeOfDay = padNumber((i % 4) * 600, 4);
+                let year, month, day, timeOfDay;
+
+                if (track.startDate && /^\d{8}$/.test(track.startDate) && track.startTime !== undefined) {
+                    const startYear = parseInt(track.startDate.substring(0, 4), 10);
+                    const startMonth = parseInt(track.startDate.substring(4, 6), 10) - 1; // JS months are 0-indexed
+                    const startDay = parseInt(track.startDate.substring(6, 8), 10);
+                    const startHour = track.startTime;
+
+                    const pointDate = new Date(Date.UTC(startYear, startMonth, startDay, startHour));
+                    pointDate.setUTCHours(pointDate.getUTCHours() + i * 6);
+
+                    year = pointDate.getUTCFullYear();
+                    month = pointDate.getUTCMonth() + 1;
+                    day = pointDate.getUTCDate();
+                    timeOfDay = padNumber(pointDate.getUTCHours() * 100, 4);
+                } else {
+                    // fallback for tracks without a start date
+                    const currentYear = new Date().getFullYear();
+                    const dayOfYear = Math.floor(i / 4) + 1;
+                    const tempDate = new Date(Date.UTC(currentYear, 0, dayOfYear));
+                    year = currentYear;
+                    month = tempDate.getUTCMonth() + 1;
+                    day = tempDate.getUTCDate();
+                    timeOfDay = padNumber((i % 4) * 600, 4);
+                }
+
                 let entry = HURDAT_FORMATS.ENTRY(
                     year,
                     padNumber(month, 2),
-                    padNumber(dayOfMonth, 2),
+                    padNumber(day, 2),
                     timeOfDay,
                     getTypeCode(point.type, point.cat),
                     formatLatLon(point.lat, true, decimalPlaces).padStart(5),
@@ -1729,6 +1762,49 @@ const HypoTrack = (function () {
 
         const deselectButton = button('Deselect track', buttonsFragment);
         deselectButton.onclick = () => { deselectTrack(); refreshGUI(); };
+
+        const trackDateContainer = div();
+        trackDateContainer.id = 'track-date-container';
+        trackDateContainer.style.display = 'none';
+        const trackDateFragment = new DocumentFragment();
+
+        const startDateInput = textbox('start-date-input', 'Start date (YYYYMMDD):', trackDateFragment);
+        startDateInput.pattern = "\\d{8}";
+        startDateInput.placeholder = "e.g. 20240825";
+
+        const startTimeSelect = createElement('select', { id: 'start-time-select' });
+        ['00', '06', '12', '18'].forEach(time => {
+            const opt = createElement('option', { value: time, textContent: `${time}Z` });
+            startTimeSelect.appendChild(opt);
+        });
+        createLabeledElement('start-time-select', 'Start time:', startTimeSelect, trackDateFragment);
+
+        const setDateButton = button('Set date/time', trackDateFragment);
+        setDateButton.onclick = () => {
+            if (selectedTrack && startDateInput.checkValidity()) {
+                const oldStartDate = selectedTrack.startDate;
+                const oldStartTime = selectedTrack.startTime;
+                const newStartDate = startDateInput.value;
+                const newStartTime = parseInt(startTimeSelect.value, 10);
+
+                if (oldStartDate !== newStartDate || oldStartTime !== newStartTime) {
+                    History.record(History.ActionTypes.setTrackDate, {
+                        trackIndex: tracks.indexOf(selectedTrack),
+                        oldStartDate, oldStartTime,
+                        newStartDate, newStartTime
+                    });
+                    selectedTrack.startDate = newStartDate;
+                    selectedTrack.startTime = newStartTime;
+                    if (autosave) Database.save();
+                    requestRedraw();
+                }
+            } else {
+                alert("Please enter a valid date in YYYYMMDD format.");
+            }
+        };
+        trackDateContainer.appendChild(trackDateFragment);
+        buttons.appendChild(trackDateContainer);
+
         const modifyTrackPointButton = button('Modify track point', buttonsFragment);
         modifyTrackPointButton.onclick = () => {
             if (!selectedDot) return;
@@ -2305,6 +2381,16 @@ const HypoTrack = (function () {
 
             singleTrackCheckbox.checked = hideNonSelectedTracks;
             singleTrackCheckbox.disabled = deselectButton.disabled = !selectedTrack;
+
+            const trackDateContainer = document.getElementById('track-date-container');
+            if (selectedTrack) {
+                trackDateContainer.style.display = 'block';
+                document.getElementById('start-date-input').value = selectedTrack.startDate || '';
+                document.getElementById('start-time-select').value = selectedTrack.startTime !== undefined ? padNumber(selectedTrack.startTime, 2) : '00';
+            } else {
+                trackDateContainer.style.display = 'none';
+            }
+
             deletePointsCheckbox.checked = deleteTrackPoints;
             modifyTrackPointButton.disabled = !selectedDot || !saveLoadReady;
             altColorCheckbox.checked = useAltColors;
@@ -2677,6 +2763,7 @@ const HypoTrack = (function () {
         hoverTrack = undefined;
         hoverDot = undefined;
         if (hideNonSelectedTracks) hideNonSelectedTracks = false;
+        if (refreshGUI) refreshGUI();
         requestRedraw();
     }
 
