@@ -20,8 +20,6 @@ body[data-theme="monsoon"] a {
 	border-bottom: solid 1px black;
 	content: '';
 	display: block;
-	transform: scaleX(0);
-	transition: transform 300ms;
 }
 
 body[data-theme="monsoon"] a:hover,
@@ -51,6 +49,11 @@ body[data-theme="monsoon"] #ui-container div {
 	border: none;
 	border-radius: .2rem;
 	margin-bottom: .5rem;
+	padding: 0.5rem;
+}
+
+body[data-theme="monsoon"] #track-date-container {
+	border: 1px solid #ccc;
 }
 
 body[data-theme="monsoon"] #version {

@@ -1,0 +1,80 @@
+/* Cobalt Theme */
+body[data-theme="cobalt"] {
+    background: #0a192f;
+    background: linear-gradient(to bottom, #0a192f, #172a45);
+    color: #ccd6f6;
+    font-family: Georgia, 'Times New Roman', serif;
+}
+
+body[data-theme="cobalt"] a {
+    color: #64ffda;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+body[data-theme="cobalt"] a:hover,
+body[data-theme="cobalt"] a#version:hover {
+    color: #fff;
+}
+
+body[data-theme="cobalt"] #ui-container {
+    background: #172a45;
+    border: 1px solid #233554;
+    padding: .5rem;
+    border-radius: .2rem;
+}
+
+body[data-theme="cobalt"] #ui-container div {
+    background-color: #0a192f;
+    border: 1px solid #233554;
+    border-radius: .2rem;
+    margin-bottom: .5rem;
+    padding: 0.5rem;
+}
+
+body[data-theme="cobalt"] #version,
+body[data-theme="cobalt"] #theme-select {
+    background-color: #0a192f;
+    border: 1px solid #233554;
+    color: #ccd6f6;
+}
+
+body[data-theme="cobalt"] select,
+body[data-theme="cobalt"] button,
+body[data-theme="cobalt"] input[type="text"],
+body[data-theme="cobalt"] input[type="number"] {
+    border: 1px solid #233554;
+    color: #ccd6f6;
+    background-color: #172a45;
+    font-family: Georgia, 'Times New Roman', serif;
+    padding: 4px;
+    border-radius: 3px;
+}
+
+body[data-theme="cobalt"] button {
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+body[data-theme="cobalt"] button:hover {
+    background-color: #233554;
+}
+
+body[data-theme="cobalt"] button:disabled {
+    background-color: #172a45;
+    color: #8892b0;
+    cursor: not-allowed;
+}
+
+body[data-theme="cobalt"] #ui-container option {
+    background-color: #172a45;
+    color: #ccd6f6;
+}
+
+body[data-theme="cobalt"] input::placeholder {
+    color: #8892b0;
+}
+
+body[data-theme="cobalt"] #track-date-container {
+    border: 1px solid #233554;
+}

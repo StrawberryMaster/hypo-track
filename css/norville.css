@@ -1,0 +1,488 @@
+/* Norville theme - Jesus, what have I done? */
+body[data-theme="norville"] {
+    background: #2d5016;
+    background: radial-gradient(circle at 30% 40%, #4a7c59, #2d5016, #1a3409);
+    color: #f4e4bc;
+    font-family: 'Comic Sans MS', cursive, sans-serif;
+    font-size: 14px;
+    overflow-x: hidden;
+}
+
+body[data-theme="norville"] #ui-container {
+    position: fixed;
+    left: 20px;
+    top: 20px;
+    bottom: 20px;
+    width: 300px;
+    background: linear-gradient(45deg, #8b4513, #654321);
+    border: 4px solid #d2b48c;
+    border-radius: 25px;
+    padding: 15px;
+    box-shadow: 0 0 20px rgba(139, 69, 19, 0.8);
+    overflow-y: auto;
+    z-index: 100;
+}
+
+body[data-theme="norville"] #canvas-container {
+    margin-left: 340px !important;
+    margin-right: 20px !important;
+    margin-top: 20px !important;
+    margin-bottom: 20px !important;
+    border: 5px dashed #f4e4bc;
+    border-radius: 15px;
+    background: #1a3409;
+    padding: 10px;
+}
+
+body[data-theme="norville"] #ui-container div {
+    background: linear-gradient(135deg, #d2b48c, #deb887);
+    border: 2px solid #8b4513;
+    border-radius: 15px;
+    margin-bottom: 15px;
+    padding: 12px;
+    transform: rotate(-1deg);
+    box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+body[data-theme="norville"] #ui-container div:nth-child(even) {
+    transform: rotate(1deg);
+}
+
+body[data-theme="norville"] #ui-container div:nth-child(3n) {
+    transform: rotate(-0.5deg);
+}
+
+body[data-theme="norville"] button {
+    background: linear-gradient(45deg, #8fbc8f, #90ee90);
+    border: 3px solid #2e8b57;
+    border-radius: 20px;
+    color: #2d5016;
+    font-family: 'Comic Sans MS', cursive, sans-serif;
+    font-weight: bold;
+    font-size: 12px;
+    padding: 8px 15px;
+    cursor: pointer;
+    transform: skew(-5deg);
+    transition: all 0.3s ease;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.7);
+}
+
+body[data-theme="norville"] button:hover {
+    background: linear-gradient(45deg, #98fb98, #adff2f);
+    transform: skew(-5deg) scale(1.05);
+    box-shadow: 0 0 10px rgba(144, 238, 144, 0.8);
+}
+
+body[data-theme="norville"] button:disabled {
+    background: linear-gradient(45deg, #696969, #808080);
+    color: #a0a0a0;
+    transform: skew(-5deg) scale(0.95);
+    cursor: not-allowed;
+}
+
+body[data-theme="norville"] input[type="text"],
+body[data-theme="norville"] input[type="number"],
+body[data-theme="norville"] select {
+    background: linear-gradient(135deg, #f0e68c, #ffffe0);
+    border: 2px solid #daa520;
+    border-radius: 10px;
+    color: #8b4513;
+    font-family: 'Comic Sans MS', cursive, sans-serif;
+    font-size: 11px;
+    padding: 6px 10px;
+    transform: rotate(-1deg);
+    box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+body[data-theme="norville"] input[type="text"]:focus,
+body[data-theme="norville"] input[type="number"]:focus,
+body[data-theme="norville"] select:focus {
+    outline: none;
+    border-color: #ff6347;
+    box-shadow: 0 0 8px rgba(255, 99, 71, 0.6);
+    transform: rotate(0deg) scale(1.02);
+}
+
+body[data-theme="norville"] input::placeholder {
+    color: #cd853f;
+    font-style: italic;
+}
+
+body[data-theme="norville"] h3 {
+    color: #f4e4bc;
+    font-size: 18px;
+    text-align: center;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+    transform: rotate(-2deg);
+    margin: 10px 0;
+}
+
+body[data-theme="norville"] label {
+    color: #2d5016;
+    font-weight: bold;
+    font-size: 11px;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.7);
+}
+
+body[data-theme="norville"] input[type="checkbox"] {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #f0e68c;
+    border: 2px solid #daa520;
+    border-radius: 50%;
+    position: relative;
+    cursor: pointer;
+}
+
+body[data-theme="norville"] input[type="checkbox"]:checked {
+    background: #32cd32;
+    border-color: #228b22;
+}
+
+body[data-theme="norville"] input[type="checkbox"]:checked::after {
+    content: '🦴';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10px;
+}
+
+body[data-theme="norville"] option {
+    background: #f0e68c;
+    color: #8b4513;
+}
+
+body[data-theme="norville"] #version {
+    background: linear-gradient(45deg, #8b4513, #654321);
+    border: 2px solid #d2b48c;
+    color: #f4e4bc;
+    transform: rotate(-3deg);
+}
+
+body[data-theme="norville"] #theme-select {
+    background: linear-gradient(135deg, #f0e68c, #ffffe0);
+    border: 2px solid #daa520;
+    color: #8b4513;
+    transform: rotate(2deg);
+}
+
+body[data-theme="norville"] .browser-item {
+    background: linear-gradient(135deg, #f0e68c, #ffffe0) !important;
+    border: 2px solid #daa520 !important;
+    border-radius: 10px !important;
+    color: #8b4513 !important;
+    margin: 5px 0 !important;
+    padding: 8px !important;
+    transform: skew(-2deg) !important;
+    font-weight: bold !important;
+}
+
+body[data-theme="norville"] .browser-item:hover {
+    background: linear-gradient(135deg, #98fb98, #adff2f) !important;
+    transform: skew(-2deg) scale(1.02) !important;
+}
+
+body[data-theme="norville"] .browser-item.selected {
+    background: linear-gradient(135deg, #ffa500, #ff8c00) !important;
+    color: #fff !important;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7) !important;
+}
+
+body[data-theme="norville"] #season-browser {
+    background: linear-gradient(135deg, #deb887, #f5deb3) !important;
+    border: 3px solid #8b4513 !important;
+    border-radius: 15px !important;
+    max-height: 120px !important;
+}
+
+body[data-theme="norville"] a {
+    color: #32cd32;
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+body[data-theme="norville"] a:hover {
+    color: #adff2f;
+    text-shadow: 0 0 5px rgba(173, 255, 47, 0.8);
+}
+
+body[data-theme="norville"] #track-date-container {
+    border: 3px dashed #32cd32 !important;
+    background: linear-gradient(45deg, #90ee90, #98fb98) !important;
+    transform: rotate(1.5deg) !important;
+}
+
+/* Coordinates tab gets mystery styling */
+body[data-theme="norville"] #coordinates-tab {
+    background: rgba(139, 69, 19, 0.9) !important;
+    border: 2px solid #d2b48c !important;
+    color: #f4e4bc !important;
+    font-family: 'Comic Sans MS', cursive, sans-serif !important;
+    transform: rotate(-2deg) !important;
+}
+
+body[data-theme="norville"] #zoom-controls {
+    background: rgba(139, 69, 19, 0.8) !important;
+    border: 3px solid #d2b48c !important;
+    border-radius: 20px !important;
+    transform: rotate(1deg) !important;
+}
+
+body[data-theme="norville"] #zoom-controls button {
+    background: linear-gradient(45deg, #8fbc8f, #90ee90) !important;
+    border: 2px solid #2e8b57 !important;
+    color: #2d5016 !important;
+    transform: none !important;
+}
+
+body[data-theme="norville"] #zoom-controls input[type="range"] {
+    accent-color: #32cd32;
+}
+
+body[data-theme="norville"] .custom-cat-item {
+    background: linear-gradient(135deg, #f0e68c, #ffffe0) !important;
+    border: 2px solid #daa520 !important;
+    border-radius: 10px !important;
+    transform: skew(-1deg) !important;
+    margin: 8px 0 !important;
+}
+
+body[data-theme="norville"] #category-editor-modal form {
+    background: linear-gradient(135deg, #8b4513, #a0522d) !important;
+    border: 4px solid #d2b48c !important;
+    color: #f4e4bc !important;
+    border-radius: 20px !important;
+    box-shadow: 0 0 30px rgba(139, 69, 19, 0.9) !important;
+}
+
+body[data-theme="norville"] #category-editor-modal input {
+    background: linear-gradient(135deg, #f0e68c, #ffffe0) !important;
+    border: 2px solid #daa520 !important;
+    color: #8b4513 !important;
+}
+
+body[data-theme="norville"]::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        radial-gradient(circle at 20% 80%, rgba(50, 205, 50, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255, 255, 224, 0.1) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: -1;
+}
+
+body[data-theme="norville"] .btn-small {
+    font-size: 9px !important;
+    padding: 4px 8px !important;
+    transform: skew(-3deg) !important;
+}
+
+body[data-theme="norville"] #export-buttons {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+body[data-theme="norville"] #export-buttons .btn {
+    width: 100% !important;
+    font-size: 10px !important;
+    padding: 6px 8px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+    text-align: center !important;
+}
+
+/* Export container adjustments */
+body[data-theme="norville"] #export-container {
+    transform: rotate(-0.5deg) !important;
+}
+
+body[data-theme="norville"] #decimal-places-dropdown {
+    width: 60px !important;
+    margin-left: 5px !important;
+}
+
+body[data-theme="norville"] #export-container input[type="checkbox"] {
+    width: 12px !important;
+    height: 12px !important;
+    margin-right: 5px !important;
+}
+
+body[data-theme="norville"] #export-container label {
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+}
+
+/* Mobile and tablet responsive adjustments */
+@media screen and (max-width: 768px) {
+    body[data-theme="norville"] #ui-container {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: 40vh !important;
+        left: 0 !important;
+        top: 0 !important;
+        bottom: auto !important;
+        margin: 10px !important;
+        padding: 10px !important;
+        box-sizing: border-box !important;
+        overflow-y: auto !important;
+    }
+
+    body[data-theme="norville"] #canvas-container {
+        margin: 10px !important;
+        width: calc(100% - 20px) !important;
+        box-sizing: border-box !important;
+    }
+
+    body[data-theme="norville"] #ui-container div {
+        margin-bottom: 8px !important;
+        padding: 8px !important;
+        transform: rotate(0deg) !important;
+    }
+
+    body[data-theme="norville"] h3 {
+        font-size: 14px !important;
+        margin: 5px 0 !important;
+        transform: rotate(0deg) !important;
+    }
+
+    body[data-theme="norville"] button {
+        font-size: 11px !important;
+        padding: 6px 10px !important;
+        transform: skew(-3deg) !important;
+    }
+
+    body[data-theme="norville"] #export-buttons .btn {
+        font-size: 9px !important;
+        padding: 4px 6px !important;
+    }
+
+    body[data-theme="norville"] input[type="text"],
+    body[data-theme="norville"] input[type="number"],
+    body[data-theme="norville"] select {
+        font-size: 10px !important;
+        padding: 4px 6px !important;
+        transform: rotate(0deg) !important;
+    }
+
+    body[data-theme="norville"] #season-browser {
+        max-height: 100px !important;
+    }
+
+    body[data-theme="norville"] input[type="checkbox"] {
+        width: 14px !important;
+        height: 14px !important;
+    }
+
+    body[data-theme="norville"] .custom-cat-item {
+        transform: skew(0deg) !important;
+        margin: 4px 0 !important;
+    }
+
+    body[data-theme="norville"] #coordinates-tab {
+        top: 5px !important;
+        right: 5px !important;
+        transform: rotate(0deg) !important;
+        font-size: 10px !important;
+        padding: 4px !important;
+    }
+
+    body[data-theme="norville"] #zoom-controls {
+        bottom: 5px !important;
+        right: 5px !important;
+        transform: rotate(0deg) !important;
+        padding: 4px 6px !important;
+        gap: 4px !important;
+    }
+
+    body[data-theme="norville"] #zoom-controls input[type="range"] {
+        width: 80px !important;
+    }
+}
+
+/* extra small mobile screens */
+@media screen and (max-width: 480px) {
+    body[data-theme="norville"] {
+        font-size: 12px !important;
+    }
+
+    body[data-theme="norville"] #ui-container {
+        max-height: 35vh !important;
+        padding: 8px !important;
+        margin: 5px !important;
+    }
+
+    body[data-theme="norville"] #ui-container div {
+        margin-bottom: 6px !important;
+        padding: 6px !important;
+    }
+
+    body[data-theme="norville"] button {
+        font-size: 10px !important;
+        padding: 4px 8px !important;
+        border-width: 2px !important;
+    }
+
+    body[data-theme="norville"] #export-buttons {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 4px !important;
+    }
+
+    body[data-theme="norville"] #export-buttons .btn {
+        font-size: 8px !important;
+        padding: 3px 4px !important;
+    }
+
+    body[data-theme="norville"] input[type="text"],
+    body[data-theme="norville"] input[type="number"],
+    body[data-theme="norville"] select {
+        font-size: 9px !important;
+        padding: 3px 5px !important;
+    }
+
+    body[data-theme="norville"] label {
+        font-size: 9px !important;
+    }
+
+    body[data-theme="norville"] h3 {
+        font-size: 12px !important;
+        margin: 3px 0 !important;
+    }
+
+    body[data-theme="norville"] #canvas-container {
+        margin: 5px !important;
+        padding: 5px !important;
+    }
+
+    body[data-theme="norville"] #season-browser {
+        max-height: 80px !important;
+    }
+
+    body[data-theme="norville"] input[type="checkbox"] {
+        width: 12px !important;
+        height: 12px !important;
+    }
+
+    body[data-theme="norville"] input[type="checkbox"]:checked::after {
+        font-size: 8px !important;
+    }
+}
+
+@media screen and (max-width: 1024px) and (orientation: landscape) {
+    body[data-theme="norville"] #ui-container {
+        width: 280px !important;
+        max-height: 90vh !important;
+    }
+
+    body[data-theme="norville"] #canvas-container {
+        margin-left: 300px !important;
+    }
+}
