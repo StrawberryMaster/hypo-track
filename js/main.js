@@ -1,6 +1,6 @@
 const HypoTrack = (function () {
     const TITLE = 'HypoTrack';
-    const VERSION = '1.0.3';
+    const VERSION = '1.0.4';
     const IDB_KEY = 'hypo-track';
 
     const WIDTH = 1000;
@@ -1135,6 +1135,8 @@ const HypoTrack = (function () {
             lat: point.lat,
             cat: point.cat,
             type: point.type,
+            wind: point.wind,
+            pressure: point.pressure,
             trackDeleted
         });
         requestRedraw();
@@ -1185,11 +1187,13 @@ const HypoTrack = (function () {
     }
 
     class TrackPoint {
-        constructor(long, lat, cat, type) {
+        constructor(long, lat, cat, type, wind, pressure) {
             this.long = long || 0;
             this.lat = lat || 0;
             this.cat = cat || 0;
             this.type = type || 0;
+            this.wind = (wind !== undefined && wind !== null && !isNaN(wind)) ? Number(wind) : null;
+            this.pressure = (pressure !== undefined && pressure !== null && !isNaN(pressure)) ? Number(pressure) : null;
         }
     }
 
@@ -1276,7 +1280,8 @@ const HypoTrack = (function () {
             movePoint: 1,
             modifyPoint: 2,
             deletePoint: 3,
-            setTrackDate: 4
+            setTrackDate: 4,
+            setTrackName: 5
         };
 
         function undo() {
@@ -1303,18 +1308,23 @@ const HypoTrack = (function () {
                 const point = tracks[d.trackIndex][d.pointIndex];
                 point.cat = d.oldCat;
                 point.type = d.oldType;
+                point.wind = d.oldWind;
+                point.pressure = d.oldPressure;
             } else if (t === ActionTypes.deletePoint) {
                 let track;
                 if (d.trackDeleted) {
                     track = [];
                     tracks.splice(d.trackIndex, 0, track);
                 } else track = tracks[d.trackIndex];
-                const point = new TrackPoint(d.long, d.lat, d.cat, d.type);
+                const point = new TrackPoint(d.long, d.lat, d.cat, d.type, d.wind, d.pressure);
                 track.splice(d.pointIndex, 0, point);
             } else if (t === ActionTypes.setTrackDate) {
                 const track = tracks[d.trackIndex];
                 track.startDate = d.oldStartDate;
                 track.startTime = d.oldStartTime;
+            } else if (t === ActionTypes.setTrackName) {
+                const track = tracks[d.trackIndex];
+                track.name = d.oldName;
             }
 
             redoItems.push(action);
@@ -1348,6 +1358,8 @@ const HypoTrack = (function () {
                 const point = tracks[d.trackIndex][d.pointIndex];
                 point.cat = d.newCat;
                 point.type = d.newType;
+                point.wind = d.newWind;
+                point.pressure = d.newPressure;
             } else if (t === ActionTypes.deletePoint) {
                 const track = tracks[d.trackIndex];
                 const point = track[d.pointIndex];
@@ -1362,6 +1374,9 @@ const HypoTrack = (function () {
                 const track = tracks[d.trackIndex];
                 track.startDate = d.newStartDate;
                 track.startTime = d.newStartTime;
+            } else if (t === ActionTypes.setTrackName) {
+                const track = tracks[d.trackIndex];
+                track.name = d.newName;
             }
 
             undoItems.push(action);
@@ -1423,8 +1438,8 @@ const HypoTrack = (function () {
                     return;
                 }
 
-                tracks = tracksData.map(trackData =>
-                    trackData.map(pointData => {
+                tracks = tracksData.map(trackData => {
+                    const newTrack = trackData.map(pointData => {
                         let cat = -1;
                         // first, try to match by category name
                         if (pointData.category) {
@@ -1456,10 +1471,18 @@ const HypoTrack = (function () {
                             parseCoordinate(pointData.longitude),
                             parseCoordinate(pointData.latitude),
                             cat,
-                            type
+                            type,
+                            pointData.speed,
+                            pointData.pressure
                         );
-                    })
-                );
+                    });
+                    // assign name to the track array itself
+                    if (trackData.length > 0 && trackData[0].name) {
+                        newTrack.name = trackData[0].name;
+                    }
+                    return newTrack;
+                });
+
                 Database.save();
                 History.reset();
                 deselectTrack();
@@ -1479,8 +1502,9 @@ const HypoTrack = (function () {
     };
     const TYPE_CODES = { EX: 'EX', SD: 'SD', SS: 'SS', TD: 'TD', TS: 'TS', HU: 'HU' };
 
-    function getTypeCode(type, cat) {
-        const wind = getWindSpeed(cat);
+    function getTypeCode(point) {
+        const wind = getWindSpeed(point);
+        const { type } = point;
         if (type === 2) return TYPE_CODES.EX;
         if (type === 1) {
             return wind < 34 ? TYPE_CODES.SD : TYPE_CODES.SS;
@@ -1493,12 +1517,18 @@ const HypoTrack = (function () {
         return '  ';
     }
 
-    function getWindSpeed(cat) {
-        return masterCategories[cat]?.speed || 0;
+    function getWindSpeed(point) {
+        if (point.wind !== null && !isNaN(point.wind)) {
+            return point.wind;
+        }
+        return masterCategories[point.cat]?.speed || 0;
     }
 
-    function getPressure(cat) {
-        return masterCategories[cat]?.pressure || 1015;
+    function getPressure(point) {
+        if (point.pressure !== null && !isNaN(point.pressure)) {
+            return point.pressure;
+        }
+        return masterCategories[point.cat]?.pressure || 1015;
     }
 
     const padCache = new Map();
@@ -1549,7 +1579,9 @@ const HypoTrack = (function () {
             if (track.length === 0) return;
 
             const stormId = 'MT' + padNumber(index + 1, 2) + (track.startDate ? track.startDate.substring(0, 4) : new Date().getFullYear());
-            const header = HURDAT_FORMATS.HEADER(stormId, track.length);
+            let header = HURDAT_FORMATS.HEADER(stormId, track.length);
+            const stormName = (track.name || 'STORMNAME').substring(0, 9).padEnd(9);
+            header = header.replace('STORMNAME', stormName);
 
             const entries = track.map((point, i) => {
                 let year, month, day, timeOfDay;
@@ -1583,11 +1615,11 @@ const HypoTrack = (function () {
                     padNumber(month, 2),
                     padNumber(day, 2),
                     timeOfDay,
-                    getTypeCode(point.type, point.cat),
+                    getTypeCode(point),
                     formatLatLon(point.lat, true, decimalPlaces).padStart(5),
                     formatLatLon(point.long, false, decimalPlaces).padStart(6),
-                    String(getWindSpeed(point.cat)).padStart(3),
-                    getPressure(point.cat)
+                    String(getWindSpeed(point)).padStart(3),
+                    getPressure(point)
                 );
                 if (compatibilityMode) entry = entry.replace(/,\n$/, '') + ', ' + Array(14).fill('-999').join(', ') + ',\n';
                 return entry;
@@ -1605,23 +1637,23 @@ const HypoTrack = (function () {
         TD: 'Tropical cyclone', TS: 'Tropical cyclone', HU: 'Tropical cyclone'
     };
 
-    function getStageName(type, cat) {
-        return STAGE_NAMES[getTypeCode(type, cat)];
+    function getStageName(point) {
+        return STAGE_NAMES[getTypeCode(point)];
     }
 
     function exportJSON(decimalPlaces = 1) {
         const result = { tracks: [] };
         tracks.forEach((track, trackIndex) => {
             if (track.length === 0) return;
-            const stormName = `STORM ${trackIndex + 1}`;
+            const stormName = track.name || `STORM ${trackIndex + 1}`;
             result.tracks.push(track.map(point => ({
                 name: stormName,
                 latitude: formatLatLon(point.lat, true, decimalPlaces),
                 longitude: formatLatLon(point.long, false, decimalPlaces),
-                speed: getWindSpeed(point.cat),
-                pressure: getPressure(point.cat),
+                speed: getWindSpeed(point),
+                pressure: getPressure(point),
                 category: masterCategories[point.cat]?.name || 'Unknown',
-                stage: getStageName(point.type, point.cat)
+                stage: getStageName(point)
             })));
         });
         return result;
@@ -1762,23 +1794,43 @@ const HypoTrack = (function () {
 
         const deselectButton = button('Deselect track', buttonsFragment);
         deselectButton.onclick = () => { deselectTrack(); refreshGUI(); };
+        buttons.appendChild(buttonsFragment);
+
+        const trackInfoContainer = div();
+        trackInfoContainer.id = 'track-info-container';
+        trackInfoContainer.style.display = 'none';
+        const trackInfoFragment = new DocumentFragment();
+
+        const trackNameInput = textbox('track-name-input', 'Storm name:', trackInfoFragment);
+        const setTrackNameButton = button('Set name', trackInfoFragment);
+        setTrackNameButton.onclick = () => {
+            if (selectedTrack) {
+                const oldName = selectedTrack.name;
+                const newName = document.getElementById('track-name-input').value.trim();
+                if (oldName !== newName) {
+                    History.record(History.ActionTypes.setTrackName, {
+                        trackIndex: tracks.indexOf(selectedTrack),
+                        oldName, newName
+                    });
+                    selectedTrack.name = newName;
+                    if (autosave) Database.save();
+                    requestRedraw();
+                }
+            }
+        };
 
         const trackDateContainer = div();
         trackDateContainer.id = 'track-date-container';
-        trackDateContainer.style.display = 'none';
         const trackDateFragment = new DocumentFragment();
-
         const startDateInput = textbox('start-date-input', 'Start date (YYYYMMDD):', trackDateFragment);
         startDateInput.pattern = "\\d{8}";
         startDateInput.placeholder = "e.g. 20240825";
-
         const startTimeSelect = createElement('select', { id: 'start-time-select' });
         ['00', '06', '12', '18'].forEach(time => {
             const opt = createElement('option', { value: time, textContent: `${time}Z` });
             startTimeSelect.appendChild(opt);
         });
         createLabeledElement('start-time-select', 'Start time:', startTimeSelect, trackDateFragment);
-
         const setDateButton = button('Set date/time', trackDateFragment);
         setDateButton.onclick = () => {
             if (selectedTrack && startDateInput.checkValidity()) {
@@ -1786,7 +1838,6 @@ const HypoTrack = (function () {
                 const oldStartTime = selectedTrack.startTime;
                 const newStartDate = startDateInput.value;
                 const newStartTime = parseInt(startTimeSelect.value, 10);
-
                 if (oldStartDate !== newStartDate || oldStartTime !== newStartTime) {
                     History.record(History.ActionTypes.setTrackDate, {
                         trackIndex: tracks.indexOf(selectedTrack),
@@ -1803,23 +1854,52 @@ const HypoTrack = (function () {
             }
         };
         trackDateContainer.appendChild(trackDateFragment);
-        buttons.appendChild(trackDateContainer);
+        trackInfoFragment.appendChild(trackDateContainer);
+        trackInfoContainer.appendChild(trackInfoFragment);
+        buttons.appendChild(trackInfoContainer);
 
-        const modifyTrackPointButton = button('Modify track point', buttonsFragment);
+        const pointInfoContainer = div();
+        pointInfoContainer.id = 'point-info-container';
+        pointInfoContainer.style.display = 'none';
+        const pointInfoFragment = new DocumentFragment();
+
+        const windOverrideInput = textbox('wind-override-input', 'Wind (kt):', pointInfoFragment);
+        windOverrideInput.type = 'number';
+        windOverrideInput.min = '0';
+        windOverrideInput.step = '5';
+        const pressureOverrideInput = textbox('pressure-override-input', 'Pressure (mb):', pointInfoFragment);
+        pressureOverrideInput.type = 'number';
+        pressureOverrideInput.min = '800';
+        pressureOverrideInput.max = '1050';
+
+        const modifyTrackPointButton = button('Modify track point', pointInfoFragment);
         modifyTrackPointButton.onclick = () => {
             if (!selectedDot) return;
             const oldCat = selectedDot.cat, oldType = selectedDot.type;
+            const oldWind = selectedDot.wind, oldPressure = selectedDot.pressure;
+
+            const newWindVal = document.getElementById('wind-override-input').value;
+            const newPressureVal = document.getElementById('pressure-override-input').value;
+
+            const newWind = newWindVal === '' ? null : parseInt(newWindVal, 10);
+            const newPressure = newPressureVal === '' ? null : parseInt(newPressureVal, 10);
+
             selectedDot.cat = parseInt(categorySelect.value, 10);
             selectedDot.type = typeSelectData[typeSelect.value];
+            selectedDot.wind = isNaN(newWind) ? null : newWind;
+            selectedDot.pressure = isNaN(newPressure) ? null : newPressure;
+
             History.record(History.ActionTypes.modifyPoint, {
                 trackIndex: tracks.indexOf(selectedTrack),
                 pointIndex: selectedTrack.indexOf(selectedDot),
-                oldCat, oldType, newCat: selectedDot.cat, newType: selectedDot.type
+                oldCat, oldType, newCat: selectedDot.cat, newType: selectedDot.type,
+                oldWind, oldPressure, newWind: selectedDot.wind, newPressure: selectedDot.pressure
             });
             if (autosave) Database.save();
             requestRedraw();
         };
-        buttons.appendChild(buttonsFragment);
+        pointInfoContainer.appendChild(pointInfoFragment);
+        buttons.appendChild(pointInfoContainer);
 
         const checkboxFragment = new DocumentFragment();
         const singleTrackCheckbox = checkbox('single-track-checkbox', 'Single track mode', checkboxFragment);
@@ -2123,7 +2203,7 @@ const HypoTrack = (function () {
             const browserDiv = document.getElementById('season-browser');
             browserDiv.innerHTML = '';
 
-           
+
             const assignedSaves = new Set(folders.flatMap(f => f.seasons));
             let itemsToShow = [];
 
@@ -2382,14 +2462,30 @@ const HypoTrack = (function () {
             singleTrackCheckbox.checked = hideNonSelectedTracks;
             singleTrackCheckbox.disabled = deselectButton.disabled = !selectedTrack;
 
-            const trackDateContainer = document.getElementById('track-date-container');
+            const trackInfoContainer = document.getElementById('track-info-container');
+            const pointInfoContainer = document.getElementById('point-info-container');
+
             if (selectedTrack) {
-                trackDateContainer.style.display = 'block';
+                trackInfoContainer.style.display = 'block';
+                document.getElementById('track-name-input').value = selectedTrack.name || '';
                 document.getElementById('start-date-input').value = selectedTrack.startDate || '';
                 document.getElementById('start-time-select').value = selectedTrack.startTime !== undefined ? padNumber(selectedTrack.startTime, 2) : '00';
             } else {
-                trackDateContainer.style.display = 'none';
+                trackInfoContainer.style.display = 'none';
             }
+
+            if (selectedDot) {
+                pointInfoContainer.style.display = 'block';
+                const windInput = document.getElementById('wind-override-input');
+                const pressureInput = document.getElementById('pressure-override-input');
+                windInput.value = selectedDot.wind ?? '';
+                pressureInput.value = selectedDot.pressure ?? '';
+                windInput.placeholder = `e.g. ${masterCategories[selectedDot.cat]?.speed || 'N/A'}`;
+                pressureInput.placeholder = `e.g.: ${masterCategories[selectedDot.cat]?.pressure || 'N/A'}`;
+            } else {
+                pointInfoContainer.style.display = 'none';
+            }
+
 
             deletePointsCheckbox.checked = deleteTrackPoints;
             modifyTrackPointButton.disabled = !selectedDot || !saveLoadReady;
