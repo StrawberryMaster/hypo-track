@@ -1710,6 +1710,47 @@ const HypoTrack = (function () {
             #browser-back-btn { padding: 2px 8px; }
             #browser-actions { display: flex; gap: 5px; flex-wrap: wrap; }
             #browser-actions .btn { flex-grow: 1; }
+
+            .dropdown-container {
+                border: none;
+                position: relative;
+                flex: 1;
+            }
+            .dropdown-container .btn {
+                width: 100%;
+            }
+            .dropdown-menu {
+                display: none;
+                position: absolute;
+                bottom: 100%;
+                left: 0;
+                background-color: #f9f9f9;
+                min-width: 100%;
+                box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+                z-index: 10;
+                border-radius: 3px;
+                border: 1px solid #ccc;
+                padding: 4px 0;
+                margin-bottom: 4px;
+            }
+            .dropdown-menu.show {
+                display: block;
+            }
+            .dropdown-item {
+                color: black;
+                padding: 6px;
+                text-decoration: none;
+                display: block;
+                width: 100%;
+                text-align: left;
+                border: none;
+                background: none;
+                cursor: pointer;
+                font-size: 13px;
+            }
+            .dropdown-item:hover {
+                background-color: #e9e9e9;
+            }
         `;
         document.head.appendChild(style);
 
@@ -2097,6 +2138,8 @@ const HypoTrack = (function () {
 
         const exportButtons = div();
         exportButtons.id = "export-buttons";
+        exportButtons.style.display = 'flex';
+        exportButtons.style.gap = '5px';
         exportContainer.appendChild(exportButtons);
 
         const decimalPlacesDiv = div();
@@ -2111,7 +2154,8 @@ const HypoTrack = (function () {
         decimalPlacesDiv.append(decimalPlacesLabel, decimalPlacesDropdown);
         exportContainer.appendChild(decimalPlacesDiv);
 
-        const createExportButton = (text, action) => {
+        // helper for creating standard buttons
+        const createStandardButton = (text, action) => {
             const btn = button(text, new DocumentFragment());
             btn.classList.add("btn");
             btn.onclick = action;
@@ -2119,7 +2163,43 @@ const HypoTrack = (function () {
             return btn;
         };
 
-        createExportButton('Download Image', () => {
+        // helper for creating dropdown buttons
+        function createDropdownButton(label, options) {
+            const container = createElement('div', { className: 'dropdown-container' });
+            const mainButton = createElement('button', { textContent: label, className: 'btn dropdown-toggle' });
+            const menu = createElement('div', { className: 'dropdown-menu' });
+
+            options.forEach(opt => {
+                const item = createElement('button', { textContent: opt.label, className: 'dropdown-item' });
+                item.onclick = (e) => {
+                    opt.action(e);
+                    menu.classList.remove('show');
+                };
+                menu.appendChild(item);
+            });
+
+            mainButton.onclick = (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.dropdown-menu.show').forEach(openMenu => {
+                    if (openMenu !== menu) openMenu.classList.remove('show');
+                });
+                menu.classList.toggle('show');
+            };
+
+            container.append(mainButton, menu);
+            return container;
+        }
+
+        window.addEventListener('click', (e) => {
+            if (!e.target.matches('.dropdown-toggle')) {
+                document.querySelectorAll('.dropdown-menu.show').forEach(openMenu => {
+                    openMenu.classList.remove('show');
+                });
+            }
+        });
+
+        // --- create buttons ---
+        createStandardButton('Download image', () => {
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             link.download = `hypo-track-${timestamp}.png`;
@@ -2130,45 +2210,255 @@ const HypoTrack = (function () {
             }, 'image/png');
         });
 
-        createExportButton('Export HURDAT', () => {
-            const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
-            const hurdat = exportHURDAT(decimalPlaces);
-            const blob = new Blob([hurdat], { type: 'text/plain' });
-            const link = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            link.download = `hypo-track-hurdat-${timestamp}.txt`;
-            link.href = URL.createObjectURL(blob);
-            link.click();
-            URL.revokeObjectURL(link.href);
-        });
+        const importExportSubContainer = div();
+        importExportSubContainer.style.display = 'flex';
+        importExportSubContainer.style.gap = '5px';
+        importExportSubContainer.style.flexGrow = '1';
 
-        createExportButton('Export JSON', () => {
-            const compressJson = document.getElementById('compress-json-checkbox').checked;
-            const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
-            const json = exportJSON(decimalPlaces);
-            const jsonString = compressJson ? JSON.stringify(json) : JSON.stringify(json, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const link = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            link.download = `hypo-track-json-${timestamp}.json`;
-            link.href = URL.createObjectURL(blob);
-            link.click();
-            URL.revokeObjectURL(link.href);
-        });
+        const exportDropdown = createDropdownButton('Export', [
+            {
+                label: 'HURDAT',
+                action: () => {
+                    const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
+                    const hurdat = exportHURDAT(decimalPlaces);
+                    const blob = new Blob([hurdat], { type: 'text/plain' });
+                    const link = document.createElement('a');
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                    link.download = `hypo-track-hurdat-${timestamp}.txt`;
+                    link.href = URL.createObjectURL(blob);
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                }
+            },
+            {
+                label: 'JSON',
+                action: () => {
+                    const compressJson = document.getElementById('compress-json-checkbox').checked;
+                    const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
+                    const json = exportJSON(decimalPlaces);
+                    const jsonString = compressJson ? JSON.stringify(json) : JSON.stringify(json, null, 2);
+                    const blob = new Blob([jsonString], { type: 'application/json' });
+                    const link = document.createElement('a');
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                    link.download = `hypo-track-json-${timestamp}.json`;
+                    link.href = URL.createObjectURL(blob);
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                }
+            }
+        ]);
+        importExportSubContainer.appendChild(exportDropdown);
 
-        createExportButton('Import JSON', () => {
-            const fileInput = createElement('input', { type: 'file', accept: 'application/json' });
-            fileInput.style.display = 'none';
-            fileInput.onchange = () => {
-                if (fileInput.files.length > 0) {
-                    importJSONFile(fileInput.files[0]);
-                    fileInput.value = ""; // reset input after processing
+        const importDropdown = createDropdownButton('Import', [
+            {
+                label: 'HURDAT',
+                action: () => {
+                    const fileInput = createElement('input', { type: 'file', accept: '.txt,text/plain' });
+                    fileInput.style.display = 'none';
+                    fileInput.onchange = () => {
+                        if (fileInput.files.length > 0) {
+                            importHURDATFile(fileInput.files[0]);
+                            fileInput.value = "";
+                        }
+                    };
+                    document.body.appendChild(fileInput);
+                    fileInput.click();
+                    document.body.removeChild(fileInput);
+                }
+            },
+            {
+                label: 'JSON',
+                action: () => {
+                    const fileInput = createElement('input', { type: 'file', accept: '.json,application/json' });
+                    fileInput.style.display = 'none';
+                    fileInput.onchange = () => {
+                        if (fileInput.files.length > 0) {
+                            importJSONFile(fileInput.files[0]);
+                            fileInput.value = ""; // reset input after processing
+                        }
+                    };
+                    document.body.appendChild(fileInput);
+                    fileInput.click();
+                    document.body.removeChild(fileInput);
+                }
+            }
+        ]);
+        importExportSubContainer.appendChild(importDropdown);
+
+        exportButtons.appendChild(importExportSubContainer);
+
+        // function to import HURDAT file
+        function importHURDATFile(file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const text = e.target.result;
+                    const lines = text.split(/\r?\n/).map(l => l.replace(/\u00A0/g, ' ').trim()).filter(l => l.length > 0);
+                    const headerRe = /^([A-Z]{2}\d{6}),\s*([^,]{0,12}?),\s*(\d+),/i;
+                    let importedTracks = [];
+                    let currentTrack = [];
+                    let stormName = '';
+                    let stormId = '';
+                    let firstDate = null;
+                    let firstTime = null;
+
+                    const mapTypeCode = (code) => {
+                        if (!code) return 0;
+                        const c = code.trim().toUpperCase();
+                        if (c === 'EX') return 2;
+                        if (c === 'SD' || c === 'SS') return 1;
+                        // TD, TS, HU -> tropical (0)
+                        return 0;
+                    };
+
+                    for (let rawLine of lines) {
+                        const line = rawLine.trim();
+                        // header
+                        const h = line.match(headerRe);
+                        if (h) {
+                            // if there is an existing currentTrack, finalize it
+                            if (currentTrack.length > 0) {
+                                // attach metadata
+                                currentTrack.startDate = firstDate || '';
+                                currentTrack.startTime = firstTime !== null ? firstTime : undefined;
+                                currentTrack.name = stormName || '';
+                                importedTracks.push(currentTrack);
+                                currentTrack = [];
+                            }
+                            stormId = h[1];
+                            // preserve storm name where provided; ignore placeholder STORMNAME
+                            stormName = (h[2] || '').trim();
+                            if (stormName.toUpperCase().includes('STORMNAME')) stormName = '';
+                            firstDate = null;
+                            firstTime = null;
+                            continue;
+                        }
+
+                        // attempt to parse entry by splitting on commas
+                        const parts = line.split(',').map(p => p.trim());
+                        if (parts.length < 4) continue;
+                        // detect date/time at start
+                        const datePart = parts[0];
+                        const timePart = parts[1];
+                        if (!/^\d{8}$/.test(datePart) || !/^\d{4}$/.test(timePart)) continue;
+
+                        const typeCode = (parts[3] || '').toUpperCase();
+                        const latRaw = (parts[4] || '').replace(/\s+/g, '');
+                        const lonRaw = (parts[5] || '').replace(/\s+/g, '');
+                        const windRaw = (parts[6] || '').replace(/\s+/g, '');
+                        const presRaw = (parts[7] || '').replace(/\s+/g, '');
+
+                        // parse lat
+                        let lat = null, lon = null;
+                        let m = latRaw.match(/^([0-9.+-]+)\s*([NS])$/i) || latRaw.match(/^([NS])\s*([0-9.+-]+)$/i);
+                        if (m) {
+                            if (m[2] && /[NS]/i.test(m[2])) {
+                                lat = parseFloat(m[1]) * (m[2].toUpperCase() === 'S' ? -1 : 1);
+                            } else if (m[1] && /[NS]/i.test(m[1])) {
+                                lat = parseFloat(m[2]) * (m[1].toUpperCase() === 'S' ? -1 : 1);
+                            }
+                        } else {
+                            // fallback: try number then last char hemisphere
+                            const t = latRaw.replace(/[^0-9.\-NSns]/g, '');
+                            const last = t.slice(-1).toUpperCase();
+                            const num = parseFloat(t.slice(0, -1));
+                            if (!isNaN(num) && (last === 'N' || last === 'S')) lat = num * (last === 'S' ? -1 : 1);
+                        }
+
+                        // parse lon
+                        m = lonRaw.match(/^([0-9.+-]+)\s*([EW])$/i) || lonRaw.match(/^([EW])\s*([0-9.+-]+)$/i);
+                        if (m) {
+                            if (m[2] && /[EW]/i.test(m[2])) {
+                                lon = parseFloat(m[1]) * (m[2].toUpperCase() === 'W' ? -1 : 1);
+                            } else if (m[1] && /[EW]/i.test(m[1])) {
+                                lon = parseFloat(m[2]) * (m[1].toUpperCase() === 'W' ? -1 : 1);
+                            }
+                        } else {
+                            const t = lonRaw.replace(/[^0-9.\-EWew]/g, '');
+                            const last = t.slice(-1).toUpperCase();
+                            const num = parseFloat(t.slice(0, -1));
+                            if (!isNaN(num) && (last === 'E' || last === 'W')) lon = num * (last === 'W' ? -1 : 1);
+                        }
+
+                        // parse wind/pressure - treat non-numeric or -999/-99 as null
+                        const wind = (windRaw === '' || windRaw === '-999' || windRaw === '-99') ? null : (isNaN(parseInt(windRaw, 10)) ? null : parseInt(windRaw, 10));
+                        const pressure = (presRaw === '' || presRaw === '-999' || presRaw === '-99') ? null : (isNaN(parseInt(presRaw, 10)) ? null : parseInt(presRaw, 10));
+
+                        // record first date/time
+                        if (!firstDate) firstDate = datePart;
+                        if (firstTime === null) {
+                            const tnum = parseInt(timePart, 10);
+                            firstTime = isNaN(tnum) ? undefined : Math.floor(tnum / 100);
+                        }
+
+                        // if lat/lon parsed successfully, create TrackPoint
+                        if (lat !== null && lon !== null) {
+                            const ptType = mapTypeCode(typeCode);
+                            // determine category index from wind using masterCategories (supports custom categories)
+                            // our rule: choose the category with the largest speed threshold <= windVal.
+                            // for example, speeds [20,35,65,85,100,115,140] map winds 65->65(Category1), 85->85(Category2), etc.
+                            const determineCategoryIndex = (windVal) => {
+                                if (windVal === null || windVal === undefined || isNaN(windVal)) {
+                                    const unknownIdx = masterCategories.findIndex(c => c.name && c.name.toLowerCase() === 'unknown');
+                                    return unknownIdx !== -1 ? unknownIdx : masterCategories.length - 1;
+                                }
+                                // find category with largest speed <= windVal
+                                let bestIdx = null;
+                                let bestSpeed = -Infinity;
+                                for (let ci = 0; ci < masterCategories.length; ci++) {
+                                    const s = Number(masterCategories[ci].speed || 0);
+                                    if (!isNaN(s) && s <= windVal && s > bestSpeed) {
+                                        bestSpeed = s;
+                                        bestIdx = ci;
+                                    }
+                                }
+                                if (bestIdx !== null) return bestIdx;
+                                // if none found (wind smaller than all thresholds), pick category with minimum speed
+                                let minIdx = 0;
+                                let minSpeed = Number(masterCategories[0].speed || 0);
+                                for (let ci = 1; ci < masterCategories.length; ci++) {
+                                    const s = Number(masterCategories[ci].speed || 0);
+                                    if (s < minSpeed) { minSpeed = s; minIdx = ci; }
+                                }
+                                return minIdx;
+                            };
+
+                            const catIndex = determineCategoryIndex(wind);
+                            const pt = new TrackPoint(lon, lat, catIndex, ptType, wind, pressure);
+                            currentTrack.push(pt);
+                        }
+                    }
+
+                    // finalize last track if any
+                    if (currentTrack.length > 0) {
+                        currentTrack.startDate = firstDate || '';
+                        currentTrack.startTime = firstTime !== null ? firstTime : undefined;
+                        currentTrack.name = stormName || '';
+                        importedTracks.push(currentTrack);
+                    }
+
+                    if (importedTracks.length > 0) {
+                        // assign to the local tracks variable so the app sees the change
+                        tracks = importedTracks;
+                        // clear selection
+                        selectedTrack = undefined;
+                        selectedDot = undefined;
+                        // mark index rebuild and redraw
+                        needsIndexRebuild = true;
+                        if (refreshGUI) refreshGUI();
+                        requestRedraw();
+                        // autosave
+                        if (autosave && Database && typeof Database.save === 'function') Database.save();
+                        alert('HURDAT import completed: ' + importedTracks.length + ' track(s) imported.');
+                    } else {
+                        alert('No valid HURDAT data found.');
+                    }
+                } catch (error) {
+                    alert('Error importing the HURDAT file: ' + error.message);
                 }
             };
-            document.body.appendChild(fileInput);
-            fileInput.click();
-            document.body.removeChild(fileInput);
-        });
+            reader.readAsText(file);
+        }
 
         const jsonOptionsDiv = div();
         jsonOptionsDiv.style.cssText = 'border: none; padding: .2rem 0 0 0; margin-bottom: 0;';
