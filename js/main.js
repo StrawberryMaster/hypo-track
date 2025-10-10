@@ -1580,7 +1580,7 @@ const HypoTrack = (function () {
 
             const stormId = 'MT' + padNumber(index + 1, 2) + (track.startDate ? track.startDate.substring(0, 4) : new Date().getFullYear());
             let header = HURDAT_FORMATS.HEADER(stormId, track.length);
-            const stormName = (track.name || 'STORMNAME').substring(0, 9).padEnd(9);
+            const stormName = (track.name || 'STORMNAME').substring(0, 27).padEnd(9);
             header = header.replace('STORMNAME', stormName);
 
             const entries = track.map((point, i) => {
