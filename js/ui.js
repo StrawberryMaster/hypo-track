@@ -912,15 +912,12 @@
             singleTrackCheckbox.checked = AppState.getHideNonSelectedTracks();
             singleTrackCheckbox.disabled = deselectButton.disabled = !AppState.getSelectedTrack();
 
-            const trackInfoContainer = document.getElementById('track-info-container');
-            const pointInfoContainer = document.getElementById('point-info-container');
-
             const selectedTrack = AppState.getSelectedTrack();
             if (selectedTrack) {
                 trackInfoContainer.style.display = 'block';
-                document.getElementById('track-name-input').value = selectedTrack.name || '';
-                document.getElementById('start-date-input').value = selectedTrack.startDate || '';
-                document.getElementById('start-time-select').value = selectedTrack.startTime !== undefined ? padNumber(selectedTrack.startTime, 2) : '00';
+                trackNameInput.value = selectedTrack.name || '';
+                startDateInput.value = selectedTrack.startDate || '';
+                startTimeSelect.value = selectedTrack.startTime !== undefined ? Utils.padNumber(selectedTrack.startTime, 2) : '00';
             } else {
                 trackInfoContainer.style.display = 'none';
             }
@@ -928,12 +925,10 @@
             const selectedDot = AppState.getSelectedDot();
             if (selectedDot) {
                 pointInfoContainer.style.display = 'block';
-                const windInput = document.getElementById('wind-override-input');
-                const pressureInput = document.getElementById('pressure-override-input');
-                windInput.value = selectedDot.wind ?? '';
-                pressureInput.value = selectedDot.pressure ?? '';
-                windInput.placeholder = `e.g. ${AppState.getMasterCategories()[selectedDot.cat]?.speed || 'N/A'}`;
-                pressureInput.placeholder = `e.g.: ${AppState.getMasterCategories()[selectedDot.cat]?.pressure || 'N/A'}`;
+                windOverrideInput.value = selectedDot.wind ?? '';
+                pressureOverrideInput.value = selectedDot.pressure ?? '';
+                windOverrideInput.placeholder = `e.g. ${AppState.getMasterCategories()[selectedDot.cat]?.speed || 'N/A'}`;
+                pressureOverrideInput.placeholder = `e.g.: ${AppState.getMasterCategories()[selectedDot.cat]?.pressure || 'N/A'}`;
             } else {
                 pointInfoContainer.style.display = 'none';
             }
@@ -942,10 +937,9 @@
             modifyTrackPointButton.disabled = !AppState.getSelectedDot() || !AppState.getSaveLoadReady();
             altColorCheckbox.checked = AppState.getUseAltColors();
 
-            const dotSelect = document.getElementById('dot-size-select');
             const currentMultiplier = AppState.getDotSizeMultiplier();
             const isPredefined = Object.values(dotSizeOptions).includes(currentMultiplier);
-            dotSelect.value = isPredefined ? currentMultiplier : -1;
+            dotSizeSelect.value = isPredefined ? currentMultiplier : -1;
 
             autosaveCheckbox.checked = AppState.getAutosave();
             saveButton.disabled = newSeasonButton.disabled = !AppState.getSaveLoadReady();
