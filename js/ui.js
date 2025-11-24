@@ -521,6 +521,7 @@
 
         // --- create buttons ---
         createStandardButton('Download image', () => {
+            const canvas = AppState.getCanvas();
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             link.download = `hypo-track-${timestamp}.png`;
