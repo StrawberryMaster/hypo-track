@@ -4,17 +4,8 @@ const Renderer = (() => {
     // legacy localStorage key for custom maps migration
     const LOCAL_MAPS_KEY = 'hypo-track-local-custom-maps';
 
-    // offscreen canvas cache for static map rendering
-    let mapCache = null;
-    let lastMapCacheKey = null;
-    let lastCachedZoom = 0;
-
     // batch rendering state
     let trackPathCache = new Map();
-    let lastTrackCacheKey = null;
-
-    // debounce map cache regeneration
-    let mapCacheRebuildScheduled = false;
 
     function requestRedraw() {
         AppState.setNeedsRedraw(true);
@@ -27,7 +18,7 @@ const Renderer = (() => {
     async function loadImages() {
         const useCustomMap = AppState.getUseCustomMap();
         const currentMapName = AppState.getCurrentMapName();
-        
+
         if (useCustomMap && currentMapName !== 'Default') {
             try {
                 // check IndexedDB first
@@ -50,7 +41,7 @@ const Renderer = (() => {
 
                 // found data? load it
                 if (mapData) {
-                    const blob = new Blob([mapData], { type: 'image/jpeg' }); // assume jpeg, but modern browsers are good at detecting type
+                    const blob = new Blob([mapData], { type: 'image/jpeg' });
                     const url = URL.createObjectURL(blob);
                     const customMapImg = new Image();
                     customMapImg.decoding = 'async';
@@ -63,7 +54,6 @@ const Renderer = (() => {
                     AppState.setLoadedMapImg(true);
                     return;
                 } else {
-                    // fallback if no map data found
                     console.warn(`Custom map "${currentMapName}" not found. Falling back to default.`);
                     AppState.setUseCustomMap(false);
                 }
@@ -136,14 +126,8 @@ const Renderer = (() => {
         const viewH = viewW * (AppState.HEIGHT / AppState.WIDTH);
 
         const ctx = AppState.getCtx();
-        const canvas = AppState.getCanvas();
 
-        if (!ctx.getContextAttributes().willReadFrequently) {
-            const newCtx = canvas.getContext('2d', { willReadFrequently: false, alpha: false });
-            AppState.setCtx(newCtx);
-        }
-
-        // clear
+        // clear background
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, AppState.WIDTH, AppState.HEIGHT);
 
@@ -160,92 +144,13 @@ const Renderer = (() => {
         drawTracks(viewW, viewH);
     }
 
-    function drawMap() {
+    function drawMap(mvw, mvh) {
         const ctx = AppState.getCtx();
         const panLocation = AppState.getPanLocation();
-        const mvw = Utils.mapViewWidth();
-        const mvh = Utils.mapViewHeight();
-        const currentZoom = AppState.getZoomAmt();
-        
-        // generate cache key based on view parameters
-        const roundedZoom = Math.round(currentZoom * 4) / 4; // quarter-step precision
-        const cacheKey = `${panLocation.long.toFixed(1)},${panLocation.lat.toFixed(1)},${roundedZoom},${AppState.getUseCustomMap()},${AppState.getCurrentMapName()}`;
-        
-        // use cached map if view hasn't changed significantly
-        if (mapCache && lastMapCacheKey === cacheKey) {
-            ctx.drawImage(mapCache, 0, 0);
-            return;
-        }
 
-        // if we have an old cache, draw it with interpolation for smooth zooming
-        if (mapCache && mapCacheRebuildScheduled) {
-            // calculate scale difference between cached zoom and current zoom
-            const zoomDelta = currentZoom - lastCachedZoom;
-            const scaleFactor = Math.pow(AppState.ZOOM_BASE, -zoomDelta);
-            
-            // only apply transform if zoom difference is small (smooth interpolation range)
-            if (Math.abs(zoomDelta) < 0.5) {
-                ctx.save();
-                const centerX = AppState.WIDTH / 2;
-                const centerY = AppState.HEIGHT / 2;
-                ctx.translate(centerX, centerY);
-                ctx.scale(scaleFactor, scaleFactor);
-                ctx.translate(-centerX, -centerY);
-                ctx.drawImage(mapCache, 0, 0);
-                ctx.restore();
-            } else {
-                // fallback: just draw the old cache without transform
-                ctx.drawImage(mapCache, 0, 0);
-            }
-            return;
-        }
-
-        // if no cache exists yet (initial load), build it synchronously
-        if (!mapCache) {
-            rebuildMapCache(ctx, panLocation, mvw, mvh, cacheKey, roundedZoom);
-            return;
-        }
-
-        // for subsequent changes, schedule async rebuild
-        if (!mapCacheRebuildScheduled) {
-            mapCacheRebuildScheduled = true;
-            requestAnimationFrame(() => {
-                mapCacheRebuildScheduled = false;
-                rebuildMapCache(ctx, AppState.getPanLocation(), Utils.mapViewWidth(), Utils.mapViewHeight(), cacheKey, roundedZoom);
-            });
-        }
-
-        // use old cache with interpolation for this frame
-        if (mapCache) {
-            const zoomDelta = currentZoom - lastCachedZoom;
-            const scaleFactor = Math.pow(AppState.ZOOM_BASE, -zoomDelta);
-            
-            if (Math.abs(zoomDelta) < 0.5) {
-                ctx.save();
-                const centerX = AppState.WIDTH / 2;
-                const centerY = AppState.HEIGHT / 2;
-                ctx.translate(centerX, centerY);
-                ctx.scale(scaleFactor, scaleFactor);
-                ctx.translate(-centerX, -centerY);
-                ctx.drawImage(mapCache, 0, 0);
-                ctx.restore();
-            } else {
-                ctx.drawImage(mapCache, 0, 0);
-            }
-        }
-    }
-
-    function rebuildMapCache(ctx, panLocation, mvw, mvh, cacheKey, zoomLevel) {
-        // create offscreen canvas for map caching
-        if (!mapCache) {
-            mapCache = document.createElement('canvas');
-            mapCache.width = AppState.WIDTH;
-            mapCache.height = AppState.HEIGHT;
-        }
-
-        const cacheCtx = mapCache.getContext('2d', { alpha: false, willReadFrequently: false });
-        cacheCtx.fillStyle = '#fff';
-        cacheCtx.fillRect(0, 0, AppState.WIDTH, AppState.HEIGHT);
+        // ensure mvw/mvh are available if not passed
+        if (!mvw) mvw = Utils.mapViewWidth();
+        if (!mvh) mvh = Utils.mapViewHeight();
 
         const topBound = AppState.HEIGHT - AppState.WIDTH / 2;
         const west = panLocation.long;
@@ -294,18 +199,18 @@ const Renderer = (() => {
                 roundedDx + roundedDw > 0 && roundedDx < AppState.WIDTH &&
                 sx < img.width && sy < img.height
             ) {
-                cacheCtx.imageSmoothingEnabled = true;
-                cacheCtx.imageSmoothingQuality = 'high';
-                cacheCtx.drawImage(img, sx, sy, sw, sh, roundedDx, roundedDy, roundedDw, roundedDh);
+                // disable smoothing
+                // ctx.imageSmoothingEnabled = false;
+                ctx.drawImage(img, sx, sy, sw, sh, roundedDx, roundedDy, roundedDw, roundedDh);
             } else {
-                cacheCtx.fillStyle = "#efefef";
-                cacheCtx.fillRect(roundedDx, roundedDy, roundedDw, roundedDh);
+                ctx.fillStyle = "#efefef";
+                ctx.fillRect(roundedDx, roundedDy, roundedDw, roundedDh);
             }
         }
 
         const customMapImg = AppState.getCustomMapImg();
         const useCustomMap = AppState.getUseCustomMap();
-        
+
         if (useCustomMap && customMapImg) {
             const mapNorth = 90;
             const mapSouth = -90;
@@ -325,23 +230,20 @@ const Renderer = (() => {
             const dx = 0;
             const dw = AppState.WIDTH;
 
-            cacheCtx.imageSmoothingEnabled = true;
-            cacheCtx.imageSmoothingQuality = 'high';
-
             // check if the view crosses the antimeridian (180° longitude)
             if (sx + sw > customMapImg.width) {
                 // draw the first part (from sx to the right edge of the image)
                 const sw1 = customMapImg.width - sx;
                 const dw1 = dw * (sw1 / sw);
-                cacheCtx.drawImage(customMapImg, sx, sy, sw1, sh, dx, dy, dw1, dh);
+                ctx.drawImage(customMapImg, sx, sy, sw1, sh, dx, dy, dw1, dh);
 
                 // draw the second part (from the left edge of the image, wrapping around)
                 const sw2 = sw - sw1;
                 const dw2 = dw - dw1;
-                cacheCtx.drawImage(customMapImg, 0, sy, sw2, sh, dx + dw1, dy, dw2, dh);
+                ctx.drawImage(customMapImg, 0, sy, sw2, sh, dx + dw1, dy, dw2, dh);
             } else {
                 // if no wrapping, draw the single section
-                cacheCtx.drawImage(customMapImg, sx, sy, sw, sh, dx, dy, dw, dh);
+                ctx.drawImage(customMapImg, sx, sy, sw, sh, dx, dy, dw, dh);
             }
         } else {
             const mapImgs = AppState.getMapImgs();
@@ -368,18 +270,6 @@ const Renderer = (() => {
                 if (southLtZero) drawSection(mapImgs.se, 0, 180, 0, -90, 360, east, minNorthZero, south, 360);
             }
         }
-
-        // update cache key and zoom level
-        lastMapCacheKey = cacheKey;
-        lastCachedZoom = zoomLevel;
-        
-        // draw the newly built cache immediately
-        ctx.drawImage(mapCache, 0, 0);
-        
-        // only request another redraw if this was async (not initial load)
-        if (mapCache !== null) {
-            requestRedraw();
-        }
     }
 
     function buildSpatialIndex() {
@@ -388,8 +278,6 @@ const Renderer = (() => {
         const spatialIndex = AppState.getSpatialIndex();
         spatialIndex.clear();
 
-        const viewWidth = Utils.mapViewWidth();
-        const viewHeight = Utils.mapViewHeight();
         const tracks = AppState.getTracks();
 
         for (let i = 0; i < tracks.length; i++) {
@@ -411,6 +299,7 @@ const Renderer = (() => {
 
                 const worldWidth = AppState.WIDTH * Utils.zoomMult();
 
+                // wrapped points for seamless selection across dateline
                 const leftPoint = {
                     screenX: screenCoords.x - worldWidth,
                     screenY: screenCoords.y,
@@ -480,7 +369,7 @@ const Renderer = (() => {
             if (!hideNonSelectedTracks || selectedTrack === tracks[i]) {
                 const isSelected = selectedTrack === tracks[i] && !hideNonSelectedTracks;
                 const strokeStyle = isSelected ? '#ffff00' : '#ffffff';
-                
+
                 const segments = [];
                 for (let j = 0; j < tracks[i].length - 1; j++) {
                     const d = tracks[i][j];
@@ -491,12 +380,13 @@ const Renderer = (() => {
                     longLatToScreenCoordsPooled(d1, coords1);
 
                     let x0 = coords.x, x1 = coords1.x;
+                    // handle wrapping
                     if (x1 - x0 > worldWidth / 2) x1 -= worldWidth;
                     else if (x1 - x0 < -worldWidth / 2) x1 += worldWidth;
 
                     segments.push([x0, coords.y, x1, coords1.y]);
                 }
-                
+
                 pathsToRender.push({ strokeStyle, segments });
             }
         }
@@ -516,6 +406,7 @@ const Renderer = (() => {
             allSegments.forEach(([x0, y0, x1, y1]) => {
                 ctx.moveTo(x0, y0);
                 ctx.lineTo(x1, y1);
+                // draw copies for wrapping
                 ctx.moveTo(x0 - worldWidth, y0);
                 ctx.lineTo(x1 - worldWidth, y1);
                 ctx.moveTo(x0 + worldWidth, y0);
@@ -536,11 +427,11 @@ const Renderer = (() => {
 
                     const category = masterCategories[d.cat];
                     const fillStyle = category ? (useAltColors ? category.altColor : category.color) : '#000000';
-                    
+
                     if (!pointsByColor.has(fillStyle)) {
                         pointsByColor.set(fillStyle, []);
                     }
-                    
+
                     pointsByColor.get(fillStyle).push({ d, coords, track: tracks[i] });
                 }
             }
@@ -549,7 +440,7 @@ const Renderer = (() => {
         // render points batched by color
         pointsByColor.forEach((points, fillStyle) => {
             ctx.fillStyle = fillStyle;
-            
+
             points.forEach(({ d, coords, track }) => {
                 function mark(x) {
                     if (x >= -dotSize / 2 && x < AppState.WIDTH + dotSize / 2 &&
@@ -608,11 +499,6 @@ const Renderer = (() => {
                 }
             }
         }
-    }
-
-    // invalidate map cache when view changes significantly
-    function invalidateMapCache() {
-        lastMapCacheKey = null;
     }
 
     // centralized zoom helpers
@@ -785,7 +671,6 @@ const Renderer = (() => {
         setZoomAbsolute,
         setZoomRelative,
         createCoordinatesTab,
-        createZoomControls,
-        invalidateMapCache
+        createZoomControls
     };
 })();
