@@ -71,21 +71,15 @@
         document.head.appendChild(style);
 
         // GUI //
-        let suppresskeybinds = false;
         let categoryEditorModal;
 
         const mainFragment = document.createDocumentFragment();
 
-        const createElement = (() => {
-            const elementCache = new Map();
-            return (type, options = {}) => {
-                let element = !options.id && !options.textContent && elementCache.get(type)?.cloneNode(false) ||
-                    document.createElement(type);
-                if (!options.id && !options.textContent) elementCache.set(type, element.cloneNode(false));
-                Object.assign(element, options);
-                return element;
-            };
-        })();
+        const createElement = (type, options = {}) => {
+            const element = document.createElement(type);
+            Object.assign(element, options);
+            return element;
+        };
 
         function createLabeledElement(id, labelText, element, fragment) {
             const label = createElement('label', { htmlFor: id, textContent: labelText });
