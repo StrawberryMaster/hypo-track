@@ -1,11 +1,25 @@
 // Rendering and drawing operations
 
 const Renderer = (() => {
-    // legacy localStorage key for custom maps migration
     const LOCAL_MAPS_KEY = 'hypo-track-local-custom-maps';
 
-    // batch rendering state
-    let trackPathCache = new Map();
+    const groupedPaths = new Map();
+    const pointsByColor = new Map();
+    
+    // object pool for coordinates
+    const coordsPool = [];
+    let poolIndex = 0;
+
+    let lastRenderPanLong = null;
+    let lastRenderPanLat = null;
+    let lastRenderZoom = null;
+
+    function getCoords() {
+        if (poolIndex >= coordsPool.length) {
+            coordsPool.push({ x: 0, y: 0, inBounds: false });
+        }
+        return coordsPool[poolIndex++];
+    }
 
     function requestRedraw() {
         AppState.setNeedsRedraw(true);
@@ -21,25 +35,19 @@ const Renderer = (() => {
 
         if (useCustomMap && currentMapName !== 'Default') {
             try {
-                // check IndexedDB first
                 let mapData = await Database.loadMap(currentMapName);
 
-                // then check localStorage for migration
                 if (!mapData) {
                     const localMaps = JSON.parse(localStorage.getItem(LOCAL_MAPS_KEY) || '{}');
                     if (localMaps[currentMapName]) {
-                        console.log(`Migrating map "${currentMapName}" from localStorage to IndexedDB...`);
                         const arrayBuffer = Utils.base64ToArrayBuffer(localMaps[currentMapName]);
-
                         await Database.saveMap(currentMapName, new Uint8Array(arrayBuffer));
                         delete localMaps[currentMapName];
                         localStorage.setItem(LOCAL_MAPS_KEY, JSON.stringify(localMaps));
-
                         mapData = new Uint8Array(arrayBuffer);
                     }
                 }
 
-                // found data? load it
                 if (mapData) {
                     const blob = new Blob([mapData], { type: 'image/jpeg' });
                     const url = URL.createObjectURL(blob);
@@ -54,7 +62,6 @@ const Renderer = (() => {
                     AppState.setLoadedMapImg(true);
                     return;
                 } else {
-                    console.warn(`Custom map "${currentMapName}" not found. Falling back to default.`);
                     AppState.setUseCustomMap(false);
                 }
             } catch (error) {
@@ -72,16 +79,9 @@ const Renderer = (() => {
 
         try {
             const worker = new Worker('./js/worker.js');
-
             const paths = Array.from(IMAGE_PATHS.values());
             const result = await new Promise((resolve, reject) => {
-                worker.onmessage = ({ data }) => {
-                    if (data.error) {
-                        reject(new Error(data.error));
-                    } else {
-                        resolve(data.imgs);
-                    }
-                };
+                worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data.imgs);
                 worker.onerror = (error) => reject(error);
                 worker.postMessage({ paths });
             });
@@ -102,9 +102,7 @@ const Renderer = (() => {
                     return img;
                 })
             );
-
             urls.forEach(url => URL.revokeObjectURL(url));
-
             const mapImgs = AppState.getMapImgs();
             Object.assign(mapImgs, Object.fromEntries(
                 Array.from(IMAGE_PATHS.keys()).map((key, i) => [key, images[i]])
@@ -121,13 +119,7 @@ const Renderer = (() => {
         if (!AppState.getNeedsRedraw()) return;
         AppState.setNeedsRedraw(false);
 
-        const zMult = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
-        const viewW = 360 / zMult;
-        const viewH = viewW * (AppState.HEIGHT / AppState.WIDTH);
-
         const ctx = AppState.getCtx();
-
-        // clear background
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, AppState.WIDTH, AppState.HEIGHT);
 
@@ -140,6 +132,21 @@ const Renderer = (() => {
             return;
         }
 
+        const zMult = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
+        const viewW = 360 / zMult;
+        const viewH = viewW * (AppState.HEIGHT / AppState.WIDTH);
+
+        // detect if pan/zoom changed since last frame to mark index dirty
+        const pan = AppState.getPanLocation();
+        const zoom = AppState.getZoomAmt();
+        
+        if (pan.long !== lastRenderPanLong || pan.lat !== lastRenderPanLat || zoom !== lastRenderZoom) {
+            AppState.setNeedsIndexRebuild(true);
+            lastRenderPanLong = pan.long;
+            lastRenderPanLat = pan.lat;
+            lastRenderZoom = zoom;
+        }
+
         drawMap(viewW, viewH);
         drawTracks(viewW, viewH);
     }
@@ -147,127 +154,103 @@ const Renderer = (() => {
     function drawMap(mvw, mvh) {
         const ctx = AppState.getCtx();
         const panLocation = AppState.getPanLocation();
+        const width = AppState.WIDTH;
+        const height = AppState.HEIGHT;
 
-        // ensure mvw/mvh are available if not passed
         if (!mvw) mvw = Utils.mapViewWidth();
         if (!mvh) mvh = Utils.mapViewHeight();
 
-        const topBound = AppState.HEIGHT - AppState.WIDTH / 2;
+        const topBound = height - width / 2;
         const west = panLocation.long;
-        const east = west + mvw;
         const north = panLocation.lat;
         const south = north - mvh;
+        
+        const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
 
         function drawSection(img, mw, me, mn, ms, qw, qe, qn, qs, offset = 0) {
-            let sx = img.width * Math.max(0, Math.min(1, (qw - mw - offset) / (me - mw)));
-            let sw = img.width * Math.max(0, Math.min(1, (qe - mw - offset) / (me - mw))) - sx;
-            let sy = img.height * Math.max(0, Math.min(1, (qn - mn) / (ms - mn)));
-            let sh = img.height * Math.max(0, Math.min(1, (qs - mn) / (ms - mn))) - sy;
+            const rangeW = me - mw;
+            const rangeH = ms - mn;
+            
+            let sx = img.width * clamp01((qw - mw - offset) / rangeW);
+            let sw = img.width * clamp01((qe - mw - offset) / rangeW) - sx;
+            let sy = img.height * clamp01((qn - mn) / rangeH);
+            let sh = img.height * clamp01((qs - mn) / rangeH) - sy;
 
-            // Clamp to minimum size to avoid degenerate rectangles
             sw = Math.max(1, sw);
             sh = Math.max(1, sh);
 
-            let dx = AppState.WIDTH * (qw - west) / mvw;
-            let dw = AppState.WIDTH * (qe - qw) / mvw;
-            let dy = (AppState.HEIGHT - topBound) * (qn - north) / (south - north) + topBound;
-            let dh = (AppState.HEIGHT - topBound) * (qs - qn) / (south - north);
+            let dx = width * (qw - west) / mvw;
+            let dw = width * (qe - qw) / mvw;
+            let dy = (height - topBound) * (qn - north) / (south - north) + topBound;
+            let dh = (height - topBound) * (qs - qn) / (south - north);
 
-            // clamp again on destination
-            let roundedDx = Math.round(dx);
-            let roundedDy = Math.round(dy);
-            let roundedDw = Math.max(1, Math.round(dx + dw) - roundedDx);
-            let roundedDh = Math.max(1, Math.round(dy + dh) - roundedDy);
+            const rDx = Math.round(dx);
+            const rDy = Math.round(dy);
+            let rDw = Math.max(1, Math.round(dx + dw) - rDx);
+            let rDh = Math.max(1, Math.round(dy + dh) - rDy);
 
             const scaleX = sw / dw;
             const scaleY = sh / dh;
-            sw = roundedDw * scaleX;
-            sh = roundedDh * scaleY;
+            sw = rDw * scaleX;
+            sh = rDh * scaleY;
 
-            // add a minimal overlap to avoid gaps at extreme zoom
             const overlap = 1;
             if (dw > 0 && dh > 0) {
-                roundedDw += overlap;
-                roundedDh += overlap;
+                rDw += overlap;
+                rDh += overlap;
                 sw += overlap * scaleX;
                 sh += overlap * scaleY;
             }
 
-            // only draw if everything is valid and in bounds
-            if (
-                sw > 0 && sh > 0 &&
-                roundedDx + roundedDw > 0 && roundedDx < AppState.WIDTH &&
-                sx < img.width && sy < img.height
-            ) {
-                // disable smoothing
-                // ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(img, sx, sy, sw, sh, roundedDx, roundedDy, roundedDw, roundedDh);
+            if (sw > 0 && sh > 0 && rDx + rDw > 0 && rDx < width && sx < img.width && sy < img.height) {
+                ctx.drawImage(img, sx, sy, sw, sh, rDx, rDy, rDw, rDh);
             } else {
                 ctx.fillStyle = "#efefef";
-                ctx.fillRect(roundedDx, roundedDy, roundedDw, roundedDh);
+                ctx.fillRect(rDx, rDy, rDw, rDh);
             }
         }
 
         const customMapImg = AppState.getCustomMapImg();
-        const useCustomMap = AppState.getUseCustomMap();
-
-        if (useCustomMap && customMapImg) {
+        if (AppState.getUseCustomMap() && customMapImg) {
             const mapNorth = 90;
             const mapSouth = -90;
-
-            // calculate the vertical part of the map to show
             const sy = customMapImg.height * (mapNorth - north) / (mapNorth - mapSouth);
             const sh = customMapImg.height * mvh / (mapNorth - mapSouth);
-
-            // calculate the horizontal part
-            // normalize west longitude to be in [0, 360) range for easier calculations
             const sx = customMapImg.width * (west + 180) / 360;
             const sw = customMapImg.width * mvw / 360;
-
-            // calculate destination drawing parameters
             const dy = topBound;
-            const dh = AppState.HEIGHT - topBound;
-            const dx = 0;
-            const dw = AppState.WIDTH;
+            const dh = height - topBound;
 
-            // check if the view crosses the antimeridian (180° longitude)
             if (sx + sw > customMapImg.width) {
-                // draw the first part (from sx to the right edge of the image)
                 const sw1 = customMapImg.width - sx;
-                const dw1 = dw * (sw1 / sw);
-                ctx.drawImage(customMapImg, sx, sy, sw1, sh, dx, dy, dw1, dh);
-
-                // draw the second part (from the left edge of the image, wrapping around)
-                const sw2 = sw - sw1;
-                const dw2 = dw - dw1;
-                ctx.drawImage(customMapImg, 0, sy, sw2, sh, dx + dw1, dy, dw2, dh);
+                const dw1 = width * (sw1 / sw);
+                ctx.drawImage(customMapImg, sx, sy, sw1, sh, 0, dy, dw1, dh);
+                ctx.drawImage(customMapImg, 0, sy, sw - sw1, sh, dw1, dy, width - dw1, dh);
             } else {
-                // if no wrapping, draw the single section
-                ctx.drawImage(customMapImg, sx, sy, sw, sh, dx, dy, dw, dh);
+                ctx.drawImage(customMapImg, sx, sy, sw, sh, 0, dy, width, dh);
             }
         } else {
             const mapImgs = AppState.getMapImgs();
-            const northGtZero = north > 0;
-            const southLtZero = south < 0;
+            const east = west + mvw;
             const minNorthZero = Math.min(north, 0);
             const maxSouthZero = Math.max(south, 0);
 
             if (west < 0) {
-                if (northGtZero) drawSection(mapImgs.nw, -180, 0, 90, 0, west, Math.min(east, 0), north, maxSouthZero);
-                if (southLtZero) drawSection(mapImgs.sw, -180, 0, 0, -90, west, Math.min(east, 0), minNorthZero, south);
+                if (north > 0) drawSection(mapImgs.nw, -180, 0, 90, 0, west, Math.min(east, 0), north, maxSouthZero);
+                if (south < 0) drawSection(mapImgs.sw, -180, 0, 0, -90, west, Math.min(east, 0), minNorthZero, south);
             }
             if (east > 0) {
                 const maxWestZero = Math.max(west, 0);
-                if (northGtZero) drawSection(mapImgs.ne, 0, 180, 90, 0, maxWestZero, Math.min(east, 180), north, maxSouthZero);
-                if (southLtZero) drawSection(mapImgs.se, 0, 180, 0, -90, maxWestZero, Math.min(east, 180), minNorthZero, south);
+                if (north > 0) drawSection(mapImgs.ne, 0, 180, 90, 0, maxWestZero, Math.min(east, 180), north, maxSouthZero);
+                if (south < 0) drawSection(mapImgs.se, 0, 180, 0, -90, maxWestZero, Math.min(east, 180), minNorthZero, south);
             }
             if (east > 180) {
-                if (northGtZero) drawSection(mapImgs.nw, -180, 0, 90, 0, 180, Math.min(east, 360), north, maxSouthZero, 360);
-                if (southLtZero) drawSection(mapImgs.sw, -180, 0, 0, -90, 180, Math.min(east, 360), minNorthZero, south, 360);
+                if (north > 0) drawSection(mapImgs.nw, -180, 0, 90, 0, 180, Math.min(east, 360), north, maxSouthZero, 360);
+                if (south < 0) drawSection(mapImgs.sw, -180, 0, 0, -90, 180, Math.min(east, 360), minNorthZero, south, 360);
             }
             if (east > 360) {
-                if (northGtZero) drawSection(mapImgs.ne, 0, 180, 90, 0, 360, east, north, maxSouthZero, 360);
-                if (southLtZero) drawSection(mapImgs.se, 0, 180, 0, -90, 360, east, minNorthZero, south, 360);
+                if (north > 0) drawSection(mapImgs.ne, 0, 180, 90, 0, 360, east, north, maxSouthZero, 360);
+                if (south < 0) drawSection(mapImgs.se, 0, 180, 0, -90, 360, east, minNorthZero, south, 360);
             }
         }
     }
@@ -279,60 +262,44 @@ const Renderer = (() => {
         spatialIndex.clear();
 
         const tracks = AppState.getTracks();
+        const panLocation = AppState.getPanLocation();
+        const viewWidth = Utils.mapViewWidth();
+        const viewHeight = Utils.mapViewHeight();
+        const worldWidth = AppState.WIDTH * Utils.zoomMult();
+        const appWidth = AppState.WIDTH;
+        const appHeight = AppState.HEIGHT;
+        const topBound = appHeight - appWidth / 2;
 
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             for (let j = 0; j < track.length; j++) {
                 const point = track[j];
-                const screenCoords = Utils.longLatToScreenCoords(point);
+                const x = ((point.long - panLocation.long + 360) % 360) / viewWidth * appWidth;
+                const y = (panLocation.lat - point.lat) / viewHeight * appWidth / 2 + topBound;
+                const inBounds = x >= 0 && x < appWidth && y >= topBound && y < appHeight;
 
-                if (screenCoords.inBounds) {
-                    const indexPoint = {
-                        screenX: screenCoords.x,
-                        screenY: screenCoords.y,
-                        point: point,
-                        track: track
-                    };
-
-                    spatialIndex.insert(indexPoint);
+                if (inBounds) {
+                    spatialIndex.insert({ screenX: x, screenY: y, point, track });
                 }
 
-                const worldWidth = AppState.WIDTH * Utils.zoomMult();
-
-                // wrapped points for seamless selection across dateline
-                const leftPoint = {
-                    screenX: screenCoords.x - worldWidth,
-                    screenY: screenCoords.y,
-                    point: point,
-                    track: track
-                };
-                if (leftPoint.screenX > -100 && leftPoint.screenX < AppState.WIDTH + 100) {
-                    spatialIndex.insert(leftPoint);
-                }
-
-                const rightPoint = {
-                    screenX: screenCoords.x + worldWidth,
-                    screenY: screenCoords.y,
-                    point: point,
-                    track: track
-                };
-                if (rightPoint.screenX > -100 && rightPoint.screenX < AppState.WIDTH + 100) {
-                    spatialIndex.insert(rightPoint);
-                }
+                const leftX = x - worldWidth;
+                if (leftX > -100 && leftX < appWidth + 100) spatialIndex.insert({ screenX: leftX, screenY: y, point, track });
+                
+                const rightX = x + worldWidth;
+                if (rightX > -100 && rightX < appWidth + 100) spatialIndex.insert({ screenX: rightX, screenY: y, point, track });
             }
         }
-
         AppState.setNeedsIndexRebuild(false);
     }
 
-    function drawTracks() {
+    function drawTracks(viewWidth, viewHeight) {
         const ctx = AppState.getCtx();
-        const baseDotSize = 2 * Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
-        ctx.lineWidth = baseDotSize / 9;
+        const canvas = AppState.getCanvas();
+        
+        const zoomBase = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
+        const baseDotSize = 2 * zoomBase;
         const dotSize = baseDotSize * AppState.getDotSizeMultiplier();
         const worldWidth = AppState.WIDTH * Utils.zoomMult();
-        const viewWidth = Utils.mapViewWidth();
-        const viewHeight = Utils.mapViewHeight();
         const panLocation = AppState.getPanLocation();
         const tracks = AppState.getTracks();
         const hideNonSelectedTracks = AppState.getHideNonSelectedTracks();
@@ -340,178 +307,162 @@ const Renderer = (() => {
         const selectedDot = AppState.getSelectedDot();
         const masterCategories = AppState.getMasterCategories();
         const useAltColors = AppState.getUseAltColors();
-        const canvas = AppState.getCanvas();
+        const appWidth = AppState.WIDTH;
+        const appHeight = AppState.HEIGHT;
+        const topBound = appHeight - appWidth / 2;
 
-        // mark the spatial index for rebuild
-        AppState.setNeedsIndexRebuild(true);
+        // hover hit testing
+        const mouseX = canvas.mouseX;
+        const mouseY = canvas.mouseY;
+        const hasMouse = mouseX !== undefined && mouseY !== undefined;
+        let newHoverDot = undefined;
+        let newHoverTrack = undefined;
+        const hoverThreshSq = (zoomBase * zoomBase); 
 
-        // our pool of reusable objects
-        const coordsPool = [];
-        let poolIndex = 0;
+        ctx.lineWidth = baseDotSize / 9;
 
-        function getCoords() {
-            return coordsPool[poolIndex++] || (coordsPool[poolIndex - 1] = { x: 0, y: 0, inBounds: false });
-        }
-
-        function longLatToScreenCoordsPooled(d, out) {
-            out.x = ((d.long - panLocation.long + 360) % 360) / viewWidth * AppState.WIDTH;
-            out.y = (panLocation.lat - d.lat) / viewHeight * AppState.WIDTH / 2 + AppState.HEIGHT - AppState.WIDTH / 2;
-            out.inBounds = out.x >= 0 && out.x < AppState.WIDTH && out.y >= (AppState.HEIGHT - AppState.WIDTH / 2) && out.y < AppState.HEIGHT;
-        }
-
-        AppState.setHoverTrack(undefined);
-        AppState.setHoverDot(undefined);
-
-        // first pass: draw tracks and points
-        const pathsToRender = [];
+        poolIndex = 0;
+        groupedPaths.clear();
+        pointsByColor.clear();
 
         for (let i = 0; i < tracks.length; i++) {
-            if (!hideNonSelectedTracks || selectedTrack === tracks[i]) {
-                const isSelected = selectedTrack === tracks[i] && !hideNonSelectedTracks;
-                const strokeStyle = isSelected ? '#ffff00' : '#ffffff';
+            const track = tracks[i];
+            if (hideNonSelectedTracks && selectedTrack !== track) continue;
 
-                const segments = [];
-                for (let j = 0; j < tracks[i].length - 1; j++) {
-                    const d = tracks[i][j];
-                    const d1 = tracks[i][j + 1];
-                    const coords = getCoords();
-                    const coords1 = getCoords();
-                    longLatToScreenCoordsPooled(d, coords);
-                    longLatToScreenCoordsPooled(d1, coords1);
+            const isSelected = selectedTrack === track;
+            const strokeStyle = isSelected ? '#ffff00' : '#ffffff';
 
-                    let x0 = coords.x, x1 = coords1.x;
-                    // handle wrapping
+            if (!groupedPaths.has(strokeStyle)) groupedPaths.set(strokeStyle, []);
+            const pathSegments = groupedPaths.get(strokeStyle);
+
+            let prevX = null, prevY = null;
+
+            for (let j = 0; j < track.length; j++) {
+                const d = track[j];
+                const coords = getCoords();
+                
+                coords.x = ((d.long - panLocation.long + 360) % 360) / viewWidth * appWidth;
+                coords.y = (panLocation.lat - d.lat) / viewHeight * appWidth / 2 + topBound;
+                
+                if (prevX !== null) {
+                    let x0 = prevX, x1 = coords.x;
                     if (x1 - x0 > worldWidth / 2) x1 -= worldWidth;
                     else if (x1 - x0 < -worldWidth / 2) x1 += worldWidth;
-
-                    segments.push([x0, coords.y, x1, coords1.y]);
+                    pathSegments.push(x0, prevY, x1, coords.y);
                 }
+                prevX = coords.x;
+                prevY = coords.y;
 
-                pathsToRender.push({ strokeStyle, segments });
+                const category = masterCategories[d.cat];
+                const fillStyle = category ? (useAltColors ? category.altColor : category.color) : '#000000';
+                
+                if (!pointsByColor.has(fillStyle)) pointsByColor.set(fillStyle, []);
+                
+                pointsByColor.get(fillStyle).push({ 
+                    x: coords.x, 
+                    y: coords.y, 
+                    d, 
+                    track 
+                });
+
+                if (hasMouse) {
+                    // check main point
+                    let distSq = (coords.x - mouseX) ** 2 + (coords.y - mouseY) ** 2;
+                    if (distSq < hoverThreshSq) {
+                        newHoverDot = d;
+                        newHoverTrack = track;
+                    }
+                    // check wrapped points if main didn't hit
+                    else {
+                        const leftX = coords.x - worldWidth;
+                        distSq = (leftX - mouseX) ** 2 + (coords.y - mouseY) ** 2;
+                        if (distSq < hoverThreshSq) {
+                            newHoverDot = d;
+                            newHoverTrack = track;
+                        } else {
+                            const rightX = coords.x + worldWidth;
+                            distSq = (rightX - mouseX) ** 2 + (coords.y - mouseY) ** 2;
+                            if (distSq < hoverThreshSq) {
+                                newHoverDot = d;
+                                newHoverTrack = track;
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // render all paths in one batch per stroke style
-        const groupedPaths = new Map();
-        pathsToRender.forEach(({ strokeStyle, segments }) => {
-            if (!groupedPaths.has(strokeStyle)) {
-                groupedPaths.set(strokeStyle, []);
-            }
-            groupedPaths.get(strokeStyle).push(...segments);
-        });
+        // apply new hover state at end of calculation
+        // this ensures visual sync even if spatial index is stale
+        AppState.setHoverDot(newHoverDot);
+        AppState.setHoverTrack(newHoverTrack);
 
-        groupedPaths.forEach((allSegments, strokeStyle) => {
+        // rendering Lines
+        groupedPaths.forEach((segments, strokeStyle) => {
             ctx.strokeStyle = strokeStyle;
             ctx.beginPath();
-            allSegments.forEach(([x0, y0, x1, y1]) => {
-                ctx.moveTo(x0, y0);
-                ctx.lineTo(x1, y1);
-                // draw copies for wrapping
-                ctx.moveTo(x0 - worldWidth, y0);
-                ctx.lineTo(x1 - worldWidth, y1);
-                ctx.moveTo(x0 + worldWidth, y0);
-                ctx.lineTo(x1 + worldWidth, y1);
-            });
+            for (let i = 0; i < segments.length; i += 4) {
+                const x0 = segments[i], y0 = segments[i+1];
+                const x1 = segments[i+2], y1 = segments[i+3];
+                ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+                ctx.moveTo(x0 - worldWidth, y0); ctx.lineTo(x1 - worldWidth, y1);
+                ctx.moveTo(x0 + worldWidth, y0); ctx.lineTo(x1 + worldWidth, y1);
+            }
             ctx.stroke();
         });
 
-        // batch point rendering by color
-        const pointsByColor = new Map();
-
-        for (let i = 0; i < tracks.length; i++) {
-            if (!hideNonSelectedTracks || selectedTrack === tracks[i]) {
-                for (let j = 0; j < tracks[i].length; j++) {
-                    const d = tracks[i][j];
-                    const coords = getCoords();
-                    longLatToScreenCoordsPooled(d, coords);
-
-                    const category = masterCategories[d.cat];
-                    const fillStyle = category ? (useAltColors ? category.altColor : category.color) : '#000000';
-
-                    if (!pointsByColor.has(fillStyle)) {
-                        pointsByColor.set(fillStyle, []);
-                    }
-
-                    pointsByColor.get(fillStyle).push({ d, coords, track: tracks[i] });
-                }
-            }
-        }
-
-        // render points batched by color
+        // rendering points
         pointsByColor.forEach((points, fillStyle) => {
             ctx.fillStyle = fillStyle;
+            const yMin = topBound - dotSize / 2;
+            const yMax = appHeight + dotSize / 2;
 
-            points.forEach(({ d, coords, track }) => {
-                function mark(x) {
-                    if (x >= -dotSize / 2 && x < AppState.WIDTH + dotSize / 2 &&
-                        coords.y >= (AppState.HEIGHT - AppState.WIDTH / 2) - dotSize / 2 && coords.y < AppState.HEIGHT + dotSize / 2) {
-                        ctx.beginPath();
-                        if (d.type === 0) {
-                            ctx.arc(x, coords.y, dotSize / 2, 0, Math.PI * 2);
-                        } else if (d.type === 1) {
-                            const s = dotSize * 0.35;
-                            ctx.rect(x - s, coords.y - s, s * 2, s * 2);
-                        } else if (d.type === 2) {
-                            const r = dotSize / 2.2;
-                            ctx.moveTo(x + r * Math.cos(Math.PI / 6), coords.y + r * Math.sin(Math.PI / 6));
-                            ctx.lineTo(x + r * Math.cos(5 * Math.PI / 6), coords.y + r * Math.sin(5 * Math.PI / 6));
-                            ctx.lineTo(x + r * Math.cos(3 * Math.PI / 2), coords.y + r * Math.sin(3 * Math.PI / 2));
-                            ctx.closePath();
-                        }
-                        ctx.fill();
+            for(let i = 0; i < points.length; i++) {
+                const {x, y, d, track} = points[i];
+                if (y < yMin || y > yMax) continue;
 
-                        const strokeStyle = hideNonSelectedTracks ? 'transparent' :
-                            selectedDot === d ? '#ff0000' :
-                                selectedTrack === track ? '#ffff00' :
-                                    'transparent';
-
-                        if (strokeStyle !== 'transparent') {
-                            ctx.strokeStyle = strokeStyle;
-                            ctx.stroke();
-                        }
+                const drawShape = (cx) => {
+                    if (cx < -dotSize || cx > appWidth + dotSize) return;
+                    ctx.beginPath();
+                    if (d.type === 0) {
+                        ctx.arc(cx, y, dotSize / 2, 0, Math.PI * 2);
+                    } else if (d.type === 1) {
+                        const s = dotSize * 0.35;
+                        ctx.rect(cx - s, y - s, s * 2, s * 2);
+                    } else if (d.type === 2) {
+                        const r = dotSize / 2.2;
+                        ctx.moveTo(cx + r * 0.866, y + r * 0.5);
+                        ctx.lineTo(cx - r * 0.866, y + r * 0.5);
+                        ctx.lineTo(cx, y - r);
+                        ctx.closePath();
                     }
-                }
+                    ctx.fill();
 
-                mark(coords.x);
-                mark(coords.x - worldWidth);
-                mark(coords.x + worldWidth);
-            });
-        });
-
-        // reset pool for future reuse
-        poolIndex = 0;
-
-        // second pass: determine hover state
-        const mouseX = canvas.mouseX || 0, mouseY = canvas.mouseY || 0;
-        if (canvas.mouseX !== undefined && canvas.mouseY !== undefined) {
-            for (let i = tracks.length - 1; i >= 0; i--) {
-                if (!hideNonSelectedTracks || selectedTrack === tracks[i]) {
-                    for (let j = tracks[i].length - 1; j >= 0; j--) {
-                        const d = tracks[i][j];
-                        const c = getCoords();
-                        longLatToScreenCoordsPooled(d, c);
-                        if (c.inBounds && Math.hypot(c.x - mouseX, c.y - mouseY) < Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt())) {
-                            AppState.setHoverDot(d);
-                            AppState.setHoverTrack(tracks[i]);
-                            break;
-                        }
+                    const isSelectedDot = selectedDot === d;
+                    const isSelectedTrack = selectedTrack === track;
+                    const isHoverDot = newHoverDot === d;
+                    
+                    if (isSelectedDot || isSelectedTrack || isHoverDot) {
+                        ctx.strokeStyle = isSelectedDot ? '#ff0000' : 
+                                         (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
+                        ctx.stroke();
                     }
-                }
+                };
+                drawShape(x);
+                drawShape(x - worldWidth);
+                drawShape(x + worldWidth);
             }
-        }
+        });
     }
 
-    // centralized zoom helpers
     function setZoomAbsolute(newZoomAmt, pivotX = AppState.WIDTH / 2, pivotY = (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) + (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / 2) {
         const oldViewW = Utils.mapViewWidth();
         const oldViewH = Utils.mapViewHeight();
         const clamped = Math.max(0, Math.min(15, newZoomAmt));
 
-        // compute new view
         const newViewW = 360 / Math.pow(AppState.ZOOM_BASE, clamped);
         const newViewH = 180 / Math.pow(AppState.ZOOM_BASE, clamped);
 
-        // adjust pan to keep pivot in place
         const topBound = AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO;
         const panLocation = AppState.getPanLocation();
         panLocation.long += (oldViewW - newViewW) * (pivotX / AppState.WIDTH);
@@ -521,6 +472,8 @@ const Renderer = (() => {
         panLocation.lat = Utils.constrainLatitude(panLocation.lat, newViewH);
 
         AppState.setZoomAmt(clamped);
+        AppState.setNeedsIndexRebuild(true); // Zoom changes screen coords -> Rebuild
+        
         const zoomSliderEl = AppState.getZoomSliderEl();
         if (zoomSliderEl) zoomSliderEl.value = String(clamped);
         requestRedraw();
@@ -529,7 +482,7 @@ const Renderer = (() => {
     function setZoomRelative(delta, pivotX, pivotY) {
         setZoomAbsolute(AppState.getZoomAmt() + delta, pivotX, pivotY);
     }
-
+    
     function createCoordinatesTab(container) {
         const coordTab = document.createElement('div');
         coordTab.id = 'coordinates-tab';
