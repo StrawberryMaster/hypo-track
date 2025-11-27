@@ -1,19 +1,34 @@
 // event handlers for mouse, touch, and keyboard interactions
 
 const Events = (() => {
-    
+
+    const ZOOM_SENSITIVITY = 1 / 125;
+    const DRAG_THRESHOLD = 20;
+
     function pickNearestPoint(x, y, radius) {
-        Renderer.buildSpatialIndex();
+        if (AppState.getNeedsIndexRebuild()) {
+            Renderer.buildSpatialIndex();
+            AppState.setNeedsIndexRebuild(false);
+        }
+
         const spatialIndex = AppState.getSpatialIndex();
+        // fallback if index generation failed or is empty
+        if (!spatialIndex) return null;
+
         const range = new Spatial.CircleRange(x, y, radius);
         const candidates = spatialIndex.query(range);
+
         if (!candidates || candidates.length === 0) return null;
+
         let best = candidates[0];
-        let bestDist = Math.hypot(best.screenX - x, best.screenY - y);
+        let bestDist = (best.screenX - x) ** 2 + (best.screenY - y) ** 2;
         for (let i = 1; i < candidates.length; i++) {
             const c = candidates[i];
-            const d = Math.hypot(c.screenX - x, c.screenY - y);
-            if (d < bestDist) { best = c; bestDist = d; }
+            const d = (c.screenX - x) ** 2 + (c.screenY - y) ** 2;
+            if (d < bestDist) {
+                best = c;
+                bestDist = d;
+            }
         }
         return best;
     }
@@ -28,13 +43,12 @@ const Events = (() => {
         canvas.addEventListener('wheel', (evt) => {
             evt.preventDefault();
             if (!Utils.isValidMousePosition(evt) || !AppState.getLoadedMapImg() || !AppState.getPanLocation()) return;
-
-            const zoomSensitivity = 1 / 125;
-            Renderer.setZoomRelative(-evt.deltaY * zoomSensitivity, evt.offsetX, evt.offsetY);
+            Renderer.setZoomRelative(-evt.deltaY * ZOOM_SENSITIVITY, evt.offsetX, evt.offsetY);
         }, { passive: false });
 
         canvas.addEventListener('mousedown', (evt) => {
             if (evt.button !== 0 || !Utils.isValidMousePosition(evt) || !AppState.getLoadedMapImg()) return;
+
             AppState.setBeginClickX(evt.offsetX);
             AppState.setBeginClickY(evt.offsetY);
             AppState.setIsDragging(true);
@@ -59,72 +73,65 @@ const Events = (() => {
             Renderer.requestRedraw();
         });
 
+        let isMouseTickRunning = false;
+
         canvas.addEventListener('mousemove', (evt) => {
             const oldX = canvas.mouseX;
             const oldY = canvas.mouseY;
             canvas.mouseX = evt.offsetX;
             canvas.mouseY = evt.offsetY;
 
-            const shouldRedraw = AppState.getIsDragging() ||
-                (oldX !== canvas.mouseX || oldY !== canvas.mouseY);
-
-            if (shouldRedraw) {
+            if (AppState.getIsDragging() || oldX !== canvas.mouseX || oldY !== canvas.mouseY) {
                 Renderer.requestRedraw();
             }
 
+            if (isMouseTickRunning) return;
+
+            isMouseTickRunning = true;
+            requestAnimationFrame(() => {
+                handleMouseMoveLogic(evt);
+                isMouseTickRunning = false;
+            });
+        });
+
+        function handleMouseMoveLogic(evt) {
             if (!AppState.getIsDragging() || !Utils.isValidMousePosition(evt) || !AppState.getPanLocation()) return;
 
             const mouseMode = AppState.getMouseMode();
-            const selectedDot = AppState.getSelectedDot();
 
-            if (mouseMode === 2 && selectedDot) {
-                selectedDot.long = Utils.mouseLong(evt);
-                selectedDot.lat = Utils.mouseLat(evt);
-                Renderer.requestRedraw();
+            if (mouseMode === 2) {
+                const selectedDot = AppState.getSelectedDot();
+                if (selectedDot) {
+                    selectedDot.long = Utils.mouseLong(evt);
+                    selectedDot.lat = Utils.mouseLat(evt);
+                    AppState.setNeedsIndexRebuild(true); // Mark index dirty immediately
+                    Renderer.requestRedraw();
+                }
                 return;
             }
 
             const beginClickX = AppState.getBeginClickX();
             const beginClickY = AppState.getBeginClickY();
+            const dist = Math.hypot(evt.offsetX - beginClickX, evt.offsetY - beginClickY);
 
-            if (mouseMode === 1 || Math.hypot(evt.offsetX - beginClickX, evt.offsetY - beginClickY) >= 20) {
+            if (mouseMode === 1 || dist >= DRAG_THRESHOLD) {
                 AppState.setMouseMode(1);
-                const panLocation = AppState.getPanLocation();
-                if (AppState.getBeginPanX() === undefined) AppState.setBeginPanX(panLocation.long);
-                if (AppState.getBeginPanY() === undefined) AppState.setBeginPanY(panLocation.lat);
-
-                const mvw = Utils.mapViewWidth(), mvh = Utils.mapViewHeight();
-                const beginPanX = AppState.getBeginPanX();
-                const beginPanY = AppState.getBeginPanY();
-                panLocation.long = Utils.normalizeLongitude(beginPanX - mvw * (evt.offsetX - beginClickX) / AppState.WIDTH);
-                panLocation.lat = Utils.constrainLatitude(beginPanY + mvh * (evt.offsetY - beginClickY) / (AppState.WIDTH / 2), mvh);
-
+                updatePanPosition(evt.offsetX, evt.offsetY, beginClickX, beginClickY);
                 Renderer.requestRedraw();
             }
-        });
+        }
 
         canvas.addEventListener('mouseup', (evt) => {
-            if (evt.button !== 0 || !AppState.getBeginClickX() || !AppState.getBeginClickY()) return;
+            if (evt.button !== 0 || !AppState.getBeginClickX()) return; // Simplified check
+
             AppState.setIsDragging(false);
-
             const mouseMode = AppState.getMouseMode();
-            const selectedDot = AppState.getSelectedDot();
 
-            if (mouseMode === 0) {
-                handleAddPoint(evt);
-            } else if (mouseMode === 2 && selectedDot) {
-                handleMovePoint(evt);
-            } else if (mouseMode === 3) {
-                handleDeletePoint(evt);
-            }
+            if (mouseMode === 0) handleAddPoint(evt);
+            else if (mouseMode === 2) handleMovePoint(evt);
+            else if (mouseMode === 3) handleDeletePoint(evt);
 
-            AppState.setBeginClickX(undefined);
-            AppState.setBeginClickY(undefined);
-            AppState.setBeginPanX(undefined);
-            AppState.setBeginPanY(undefined);
-            const refreshGUI = AppState.getRefreshGUI();
-            if (refreshGUI) refreshGUI();
-            Renderer.requestRedraw();
+            resetInteractionState();
         });
 
         canvas.addEventListener('mouseout', () => {
@@ -137,28 +144,34 @@ const Events = (() => {
 
         // touch interactions
         canvas.addEventListener('touchstart', (evt) => {
-            if (!AppState.getLoadedMapImg() || !AppState.getPanLocation()) return;
-            if (evt.touches.length === 0) return;
+            if (!AppState.getLoadedMapImg() || !AppState.getPanLocation() || evt.touches.length === 0) return;
             evt.preventDefault();
 
             if (evt.touches.length === 1) {
                 // fresh single-touch: allow tap unless it turns into pinch later
                 AppState.setSuppressNextTap(false);
                 const { x, y } = Utils.getOffsetFromTouch(evt.touches[0]);
+
                 AppState.setTouchStartX(x);
                 AppState.setTouchLastX(x);
                 AppState.setTouchStartY(y);
                 AppState.setTouchLastY(y);
-                AppState.setTouchStartedInside(Utils.isValidPositionXY(x, y));
-                if (!AppState.getTouchStartedInside()) return;
 
+                if (!Utils.isValidPositionXY(x, y)) {
+                    AppState.setTouchStartedInside(false);
+                    return;
+                }
+
+                AppState.setTouchStartedInside(true);
                 AppState.setIsTouching(true);
                 AppState.setBeginClickX(x);
                 AppState.setBeginClickY(y);
                 AppState.setIsDragging(true);
 
                 // emulate hover for selection
-                const nearest = pickNearestPoint(x, y, Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt()));
+                const radius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
+                const nearest = pickNearestPoint(x, y, radius);
+
                 if (nearest) {
                     AppState.setHoverTrack(nearest.track);
                     AppState.setHoverDot(nearest.point);
@@ -184,12 +197,11 @@ const Events = (() => {
                     AppState.setMouseMode(0);
                 }
 
-                // keep hover visuals responsive
                 canvas.mouseX = x;
                 canvas.mouseY = y;
                 Renderer.requestRedraw();
+
             } else if (evt.touches.length >= 2) {
-                // start pinch; ensure we do not create a dot on gesture end
                 AppState.setSuppressNextTap(true);
                 const [t1, t2] = [evt.touches[0], evt.touches[1]];
                 const pinch = AppState.getPinch();
@@ -202,14 +214,26 @@ const Events = (() => {
             }
         }, { passive: false });
 
+        let isTouchTickRunning = false;
+
         canvas.addEventListener('touchmove', (evt) => {
-            if (!AppState.getLoadedMapImg() || !AppState.getPanLocation()) return;
-            if (evt.touches.length === 0) return;
+            if (!AppState.getLoadedMapImg() || !AppState.getPanLocation() || evt.touches.length === 0) return;
             evt.preventDefault();
 
+            if (isTouchTickRunning) return;
+
+            isTouchTickRunning = true;
+            requestAnimationFrame(() => {
+                handleTouchMoveLogic(evt);
+                isTouchTickRunning = false;
+            });
+        }, { passive: false });
+
+        function handleTouchMoveLogic(evt) {
             const pinch = AppState.getPinch();
+
+            // pinch logic
             if (evt.touches.length >= 2 && pinch.active) {
-                // still pinching; keep suppressing any tap
                 AppState.setSuppressNextTap(true);
                 const [t1, t2] = [evt.touches[0], evt.touches[1]];
                 const dist = Utils.distanceBetweenTouches(t1, t2);
@@ -220,21 +244,23 @@ const Events = (() => {
                 return;
             }
 
-            // single-finger pan or move point
+            // single finger logic
             if (evt.touches.length === 1 && AppState.getIsTouching() && AppState.getTouchStartedInside()) {
                 const { x, y } = Utils.getOffsetFromTouch(evt.touches[0]);
                 canvas.mouseX = x;
                 canvas.mouseY = y;
 
                 const mouseMode = AppState.getMouseMode();
-                const selectedDot = AppState.getSelectedDot();
 
-                if (mouseMode === 2 && selectedDot) {
-                    // moving a point
-                    const fakeEvt = { offsetX: x, offsetY: y };
-                    selectedDot.long = Utils.mouseLong(fakeEvt);
-                    selectedDot.lat = Utils.mouseLat(fakeEvt);
-                    Renderer.requestRedraw();
+                if (mouseMode === 2) {
+                    const selectedDot = AppState.getSelectedDot();
+                    if (selectedDot) {
+                        const fakeEvt = { offsetX: x, offsetY: y };
+                        selectedDot.long = Utils.mouseLong(fakeEvt);
+                        selectedDot.lat = Utils.mouseLat(fakeEvt);
+                        AppState.setNeedsIndexRebuild(true);
+                        Renderer.requestRedraw();
+                    }
                     AppState.setTouchLastX(x);
                     AppState.setTouchLastY(y);
                     return;
@@ -242,26 +268,18 @@ const Events = (() => {
 
                 const beginClickX = AppState.getBeginClickX();
                 const beginClickY = AppState.getBeginClickY();
+                const dist = Math.hypot(x - beginClickX, y - beginClickY);
 
-                // pan after threshold
-                if (mouseMode === 1 || Math.hypot(x - beginClickX, y - beginClickY) >= 20) {
+                if (mouseMode === 1 || dist >= DRAG_THRESHOLD) {
                     AppState.setMouseMode(1);
-                    const panLocation = AppState.getPanLocation();
-                    if (AppState.getBeginPanX() === undefined) AppState.setBeginPanX(panLocation.long);
-                    if (AppState.getBeginPanY() === undefined) AppState.setBeginPanY(panLocation.lat);
-
-                    const mvw = Utils.mapViewWidth(), mvh = Utils.mapViewHeight();
-                    const beginPanX = AppState.getBeginPanX();
-                    const beginPanY = AppState.getBeginPanY();
-                    panLocation.long = Utils.normalizeLongitude(beginPanX - mvw * (x - beginClickX) / AppState.WIDTH);
-                    panLocation.lat = Utils.constrainLatitude(beginPanY + mvh * (y - beginClickY) / (AppState.WIDTH / 2), mvh);
+                    updatePanPosition(x, y, beginClickX, beginClickY);
                     Renderer.requestRedraw();
                 }
 
                 AppState.setTouchLastX(x);
                 AppState.setTouchLastY(y);
             }
-        }, { passive: false });
+        }
 
         canvas.addEventListener('touchend', (evt) => {
             if (!AppState.getLoadedMapImg() || !AppState.getPanLocation()) return;
@@ -269,23 +287,14 @@ const Events = (() => {
 
             const pinch = AppState.getPinch();
             // if a pinch was active and fewer than two touches remain, stop pinching
-            if (evt.touches.length < 2 && pinch.active) {
-                pinch.active = false;
-            }
+            if (evt.touches.length < 2 && pinch.active) pinch.active = false;
 
             const isLastFinger = evt.touches.length === 0;
 
             // if a pinch/multi-touch occurred during this gesture, suppress any tap actions on last finger up
             if (isLastFinger && AppState.getSuppressNextTap()) {
                 AppState.setSuppressNextTap(false);
-                AppState.setIsDragging(false);
-                AppState.setIsTouching(false);
-                AppState.setBeginClickX(undefined);
-                AppState.setBeginClickY(undefined);
-                AppState.setBeginPanX(undefined);
-                AppState.setBeginPanY(undefined);
-                const refreshGUI = AppState.getRefreshGUI();
-                if (refreshGUI) refreshGUI();
+                resetInteractionState();
                 Renderer.requestRedraw();
                 return;
             }
@@ -301,14 +310,13 @@ const Events = (() => {
             const touchLastX = AppState.getTouchLastX();
             const touchLastY = AppState.getTouchLastY();
             const moved = Math.hypot(touchLastX - touchStartX, touchLastY - touchStartY);
-            const fakeEvt = { offsetX: touchLastX, offsetY: touchLastY };
 
             const mouseMode = AppState.getMouseMode();
-            const selectedDot = AppState.getSelectedDot();
+            const fakeEvt = { offsetX: touchLastX, offsetY: touchLastY };
 
-            if (mouseMode === 0 && moved < 20) {
-                // emulate hover selection
-                const nearest = pickNearestPoint(touchLastX, touchLastY, Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt()));
+            if (mouseMode === 0 && moved < DRAG_THRESHOLD) {
+                const radius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
+                const nearest = pickNearestPoint(touchLastX, touchLastY, radius);
                 if (nearest) {
                     AppState.setHoverTrack(nearest.track);
                     AppState.setHoverDot(nearest.point);
@@ -317,39 +325,55 @@ const Events = (() => {
                     AppState.setHoverDot(undefined);
                 }
                 handleAddPoint(fakeEvt);
-            } else if (mouseMode === 2 && selectedDot) {
+            } else if (mouseMode === 2) {
                 handleMovePoint(fakeEvt);
             } else if (mouseMode === 3) {
                 handleDeletePoint(fakeEvt);
             }
 
-            AppState.setBeginClickX(undefined);
-            AppState.setBeginClickY(undefined);
-            AppState.setBeginPanX(undefined);
-            AppState.setBeginPanY(undefined);
-            const refreshGUI = AppState.getRefreshGUI();
-            if (refreshGUI) refreshGUI();
+            resetInteractionState();
             Renderer.requestRedraw();
         }, { passive: false });
 
         canvas.addEventListener('touchcancel', (evt) => {
             evt.preventDefault();
-            const pinch = AppState.getPinch();
-            pinch.active = false;
+            AppState.getPinch().active = false;
             AppState.setSuppressNextTap(false);
-            AppState.setIsTouching(false);
-            AppState.setIsDragging(false);
-            AppState.setBeginClickX(undefined);
-            AppState.setBeginClickY(undefined);
-            AppState.setBeginPanX(undefined);
-            AppState.setBeginPanY(undefined);
+            resetInteractionState();
         }, { passive: false });
+    }
+
+    function updatePanPosition(currX, currY, startX, startY) {
+        const panLocation = AppState.getPanLocation();
+        if (AppState.getBeginPanX() === undefined) AppState.setBeginPanX(panLocation.long);
+        if (AppState.getBeginPanY() === undefined) AppState.setBeginPanY(panLocation.lat);
+
+        const mvw = Utils.mapViewWidth();
+        const mvh = Utils.mapViewHeight();
+        const beginPanX = AppState.getBeginPanX();
+        const beginPanY = AppState.getBeginPanY();
+
+        panLocation.long = Utils.normalizeLongitude(beginPanX - mvw * (currX - startX) / AppState.WIDTH);
+        panLocation.lat = Utils.constrainLatitude(beginPanY + mvh * (currY - startY) / (AppState.WIDTH / 2), mvh);
+    }
+
+    function resetInteractionState() {
+        AppState.setIsDragging(false);
+        AppState.setIsTouching(false);
+        AppState.setBeginClickX(undefined);
+        AppState.setBeginClickY(undefined);
+        AppState.setBeginPanX(undefined);
+        AppState.setBeginPanY(undefined);
+
+        const refreshGUI = AppState.getRefreshGUI();
+        if (refreshGUI) refreshGUI();
+        Renderer.requestRedraw();
     }
 
     function handleAddPoint(evt) {
         const hoverTrack = AppState.getHoverTrack();
         const hoverDot = AppState.getHoverDot();
-        
+
         if (hoverTrack) {
             AppState.setSelectedTrack(hoverTrack);
             AppState.setSelectedDot(hoverDot);
@@ -362,7 +386,7 @@ const Events = (() => {
         const selectedDot = AppState.getSelectedDot();
         const insertIndex = selectedTrack ? selectedTrack.indexOf(selectedDot) + 1 : 0;
         let track = selectedTrack;
-        
+
         if (!track) {
             track = [];
             AppState.getTracks().push(track);
@@ -370,15 +394,14 @@ const Events = (() => {
         }
 
         const newDot = new Models.TrackPoint(
-            Utils.mouseLong(evt), 
-            Utils.mouseLat(evt), 
-            AppState.getCategoryToPlace(), 
+            Utils.mouseLong(evt),
+            Utils.mouseLat(evt),
+            AppState.getCategoryToPlace(),
             AppState.getTypeToPlace()
         );
         track.splice(insertIndex, 0, newDot);
         AppState.setSelectedDot(newDot);
 
-        // mark spatial index for rebuild
         AppState.setNeedsIndexRebuild(true);
 
         History.record(History.ActionTypes.addPoint, {
@@ -396,23 +419,17 @@ const Events = (() => {
 
     function handleMovePoint(evt) {
         const selectedDot = AppState.getSelectedDot();
-        if (!selectedDot) {
-            console.error('Uh oh! handleMovePoint called without a selected dot.');
-            return;
-        }
+        if (!selectedDot) return;
+
         selectedDot.long = Utils.mouseLong(evt);
         selectedDot.lat = Utils.mouseLat(evt);
 
-        // mark spatial index for rebuild
         AppState.setNeedsIndexRebuild(true);
 
         const selectedTrack = AppState.getSelectedTrack();
         const tracks = AppState.getTracks();
         const trackIndex = tracks.indexOf(selectedTrack);
-        if (trackIndex === -1 || !selectedTrack) {
-            console.error('Invalid track in handleMovePoint', { selectedTrack, tracks });
-            return;
-        }
+
         History.record(History.ActionTypes.movePoint, {
             trackIndex,
             pointIndex: selectedTrack.indexOf(selectedDot),
@@ -428,45 +445,24 @@ const Events = (() => {
     }
 
     function handleDeletePoint(evt) {
-        // build spatial index before querying
-        Renderer.buildSpatialIndex();
-
-        // create a circular search range
         const searchRadius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
-        const searchRange = new Spatial.CircleRange(evt.offsetX, evt.offsetY, searchRadius);
 
-        // query the spatial index for points in range
-        const spatialIndex = AppState.getSpatialIndex();
-        const candidatePoints = spatialIndex.query(searchRange);
+        // check dirty flag internally and rebuild only if needed
+        const nearest = pickNearestPoint(evt.offsetX, evt.offsetY, searchRadius);
 
-        if (candidatePoints.length > 0) {
-            // find the nearest point
-            let nearestPoint = candidatePoints[0];
-            let minDistance = Math.hypot(nearestPoint.screenX - evt.offsetX, nearestPoint.screenY - evt.offsetY);
-
-            for (let i = 1; i < candidatePoints.length; i++) {
-                const distance = Math.hypot(candidatePoints[i].screenX - evt.offsetX, candidatePoints[i].screenY - evt.offsetY);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearestPoint = candidatePoints[i];
-                }
-            }
-
-            // get the track and point indexes
+        if (nearest) {
             const tracks = AppState.getTracks();
-            const trackIndex = tracks.indexOf(nearestPoint.track);
-            const pointIndex = nearestPoint.track.indexOf(nearestPoint.point);
+            const trackIndex = tracks.indexOf(nearest.track);
+            const pointIndex = nearest.track.indexOf(nearest.point);
 
             if (trackIndex !== -1 && pointIndex !== -1) {
-                const trackDeleted = handlePointDeletion(trackIndex, pointIndex, nearestPoint.point);
+                handlePointDeletion(trackIndex, pointIndex, nearest.point);
+                AppState.setNeedsIndexRebuild(true);
                 if (AppState.getAutosave()) {
-                    const tracks = AppState.getTracks();
                     tracks.length === 0 ? Database.delete() : Database.save();
                 }
-                return;
             }
         }
-
         Renderer.requestRedraw();
     }
 
@@ -478,9 +474,11 @@ const Events = (() => {
 
         const selectedDot = AppState.getSelectedDot();
         if (point === selectedDot && track.length > 0) {
-            AppState.setSelectedDot(track[track.length - 1]);
+            // select previous, or next if 0
+            const newIndex = Math.max(0, pointIndex - 1);
+            if (track[newIndex]) AppState.setSelectedDot(track[newIndex]);
         }
-        
+
         if (track.length === 0) {
             if (AppState.getSelectedTrack() === track) {
                 Utils.deselectTrack();
