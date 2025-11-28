@@ -329,7 +329,7 @@ const Renderer = (() => {
             const track = tracks[i];
             if (hideNonSelectedTracks && selectedTrack !== track) continue;
 
-            const isSelected = selectedTrack === track;
+            const isSelected = selectedTrack === track && !hideNonSelectedTracks;
             const strokeStyle = isSelected ? '#ffff00' : '#ffffff';
 
             if (!groupedPaths.has(strokeStyle)) groupedPaths.set(strokeStyle, []);
@@ -393,7 +393,6 @@ const Renderer = (() => {
         }
 
         // apply new hover state at end of calculation
-        // this ensures visual sync even if spatial index is stale
         AppState.setHoverDot(newHoverDot);
         AppState.setHoverTrack(newHoverTrack);
 
@@ -439,7 +438,7 @@ const Renderer = (() => {
                     ctx.fill();
 
                     const isSelectedDot = selectedDot === d;
-                    const isSelectedTrack = selectedTrack === track;
+                    const isSelectedTrack = selectedTrack === track && !hideNonSelectedTracks;
                     const isHoverDot = newHoverDot === d;
                     
                     if (isSelectedDot || isSelectedTrack || isHoverDot) {
