@@ -5,7 +5,7 @@ const Renderer = (() => {
 
     const groupedPaths = new Map();
     const pointsByColor = new Map();
-    
+
     // object pool for coordinates
     const coordsPool = [];
     let poolIndex = 0;
@@ -139,7 +139,7 @@ const Renderer = (() => {
         // detect if pan/zoom changed since last frame to mark index dirty
         const pan = AppState.getPanLocation();
         const zoom = AppState.getZoomAmt();
-        
+
         if (pan.long !== lastRenderPanLong || pan.lat !== lastRenderPanLat || zoom !== lastRenderZoom) {
             AppState.setNeedsIndexRebuild(true);
             lastRenderPanLong = pan.long;
@@ -164,13 +164,13 @@ const Renderer = (() => {
         const west = panLocation.long;
         const north = panLocation.lat;
         const south = north - mvh;
-        
+
         const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
 
         function drawSection(img, mw, me, mn, ms, qw, qe, qn, qs, offset = 0) {
             const rangeW = me - mw;
             const rangeH = ms - mn;
-            
+
             let sx = img.width * clamp01((qw - mw - offset) / rangeW);
             let sw = img.width * clamp01((qe - mw - offset) / rangeW) - sx;
             let sy = img.height * clamp01((qn - mn) / rangeH);
@@ -284,7 +284,7 @@ const Renderer = (() => {
 
                 const leftX = x - worldWidth;
                 if (leftX > -100 && leftX < appWidth + 100) spatialIndex.insert({ screenX: leftX, screenY: y, point, track });
-                
+
                 const rightX = x + worldWidth;
                 if (rightX > -100 && rightX < appWidth + 100) spatialIndex.insert({ screenX: rightX, screenY: y, point, track });
             }
@@ -295,7 +295,7 @@ const Renderer = (() => {
     function drawTracks(viewWidth, viewHeight) {
         const ctx = AppState.getCtx();
         const canvas = AppState.getCanvas();
-        
+
         const zoomBase = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
         const baseDotSize = 2 * zoomBase;
         const dotSize = baseDotSize * AppState.getDotSizeMultiplier();
@@ -311,19 +311,20 @@ const Renderer = (() => {
         const appHeight = AppState.HEIGHT;
         const topBound = appHeight - appWidth / 2;
 
-        // hover hit testing
+        // hover hit testing constants
         const mouseX = canvas.mouseX;
         const mouseY = canvas.mouseY;
         const hasMouse = mouseX !== undefined && mouseY !== undefined;
         let newHoverDot = undefined;
         let newHoverTrack = undefined;
-        const hoverThreshSq = (zoomBase * zoomBase); 
+        const hoverThreshSq = (zoomBase * zoomBase);
 
         ctx.lineWidth = baseDotSize / 9;
 
         poolIndex = 0;
         groupedPaths.clear();
-        pointsByColor.clear();
+
+        const pointsToRender = [];
 
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
@@ -340,10 +341,11 @@ const Renderer = (() => {
             for (let j = 0; j < track.length; j++) {
                 const d = track[j];
                 const coords = getCoords();
-                
+
                 coords.x = ((d.long - panLocation.long + 360) % 360) / viewWidth * appWidth;
                 coords.y = (panLocation.lat - d.lat) / viewHeight * appWidth / 2 + topBound;
-                
+
+                // line segments logic
                 if (prevX !== null) {
                     let x0 = prevX, x1 = coords.x;
                     if (x1 - x0 > worldWidth / 2) x1 -= worldWidth;
@@ -353,27 +355,26 @@ const Renderer = (() => {
                 prevX = coords.x;
                 prevY = coords.y;
 
+                // color calculation
                 const category = masterCategories[d.cat];
                 const fillStyle = category ? (useAltColors ? category.altColor : category.color) : '#000000';
-                
-                if (!pointsByColor.has(fillStyle)) pointsByColor.set(fillStyle, []);
-                
-                pointsByColor.get(fillStyle).push({ 
-                    x: coords.x, 
-                    y: coords.y, 
-                    d, 
-                    track 
+
+                pointsToRender.push({
+                    x: coords.x,
+                    y: coords.y,
+                    d,
+                    track,
+                    fillStyle
                 });
 
+                // hover logic
                 if (hasMouse) {
-                    // check main point
                     let distSq = (coords.x - mouseX) ** 2 + (coords.y - mouseY) ** 2;
                     if (distSq < hoverThreshSq) {
                         newHoverDot = d;
                         newHoverTrack = track;
-                    }
-                    // check wrapped points if main didn't hit
-                    else {
+                    } else {
+                        // check wrapped points if main didn't hit
                         const leftX = coords.x - worldWidth;
                         distSq = (leftX - mouseX) ** 2 + (coords.y - mouseY) ** 2;
                         if (distSq < hoverThreshSq) {
@@ -392,17 +393,16 @@ const Renderer = (() => {
             }
         }
 
-        // apply new hover state at end of calculation
         AppState.setHoverDot(newHoverDot);
         AppState.setHoverTrack(newHoverTrack);
 
-        // rendering Lines
+        // rendering lines
         groupedPaths.forEach((segments, strokeStyle) => {
             ctx.strokeStyle = strokeStyle;
             ctx.beginPath();
             for (let i = 0; i < segments.length; i += 4) {
-                const x0 = segments[i], y0 = segments[i+1];
-                const x1 = segments[i+2], y1 = segments[i+3];
+                const x0 = segments[i], y0 = segments[i + 1];
+                const x1 = segments[i + 2], y1 = segments[i + 3];
                 ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
                 ctx.moveTo(x0 - worldWidth, y0); ctx.lineTo(x1 - worldWidth, y1);
                 ctx.moveTo(x0 + worldWidth, y0); ctx.lineTo(x1 + worldWidth, y1);
@@ -411,47 +411,56 @@ const Renderer = (() => {
         });
 
         // rendering points
-        pointsByColor.forEach((points, fillStyle) => {
-            ctx.fillStyle = fillStyle;
-            const yMin = topBound - dotSize / 2;
-            const yMax = appHeight + dotSize / 2;
+        const yMin = topBound - dotSize / 2;
+        const yMax = appHeight + dotSize / 2;
+        let lastFillStyle = null;
 
-            for(let i = 0; i < points.length; i++) {
-                const {x, y, d, track} = points[i];
-                if (y < yMin || y > yMax) continue;
+        for (let i = 0; i < pointsToRender.length; i++) {
+            const { x, y, d, track, fillStyle } = pointsToRender[i];
 
-                const drawShape = (cx) => {
-                    if (cx < -dotSize || cx > appWidth + dotSize) return;
-                    ctx.beginPath();
-                    if (d.type === 0) {
-                        ctx.arc(cx, y, dotSize / 2, 0, Math.PI * 2);
-                    } else if (d.type === 1) {
-                        const s = dotSize * 0.35;
-                        ctx.rect(cx - s, y - s, s * 2, s * 2);
-                    } else if (d.type === 2) {
-                        const r = dotSize / 2.2;
-                        ctx.moveTo(cx + r * 0.866, y + r * 0.5);
-                        ctx.lineTo(cx - r * 0.866, y + r * 0.5);
-                        ctx.lineTo(cx, y - r);
-                        ctx.closePath();
-                    }
-                    ctx.fill();
+            // viewport culling
+            if (y < yMin || y > yMax) continue;
 
-                    const isSelectedDot = selectedDot === d;
-                    const isSelectedTrack = selectedTrack === track && !hideNonSelectedTracks;
-                    const isHoverDot = newHoverDot === d;
-                    
-                    if (isSelectedDot || isSelectedTrack || isHoverDot) {
-                        ctx.strokeStyle = isSelectedDot ? '#ff0000' : 
-                                         (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
-                        ctx.stroke();
-                    }
-                };
-                drawShape(x);
-                drawShape(x - worldWidth);
-                drawShape(x + worldWidth);
+            // only switch context color if it changed from the previous point
+            if (fillStyle !== lastFillStyle) {
+                ctx.fillStyle = fillStyle;
+                lastFillStyle = fillStyle;
             }
-        });
+
+            const drawShape = (cx) => {
+                // horizontal culling
+                if (cx < -dotSize || cx > appWidth + dotSize) return;
+
+                ctx.beginPath();
+                if (d.type === 0) {
+                    ctx.arc(cx, y, dotSize / 2, 0, Math.PI * 2);
+                } else if (d.type === 1) {
+                    const s = dotSize * 0.35;
+                    ctx.rect(cx - s, y - s, s * 2, s * 2);
+                } else if (d.type === 2) {
+                    const r = dotSize / 2.2;
+                    ctx.moveTo(cx + r * 0.866, y + r * 0.5);
+                    ctx.lineTo(cx - r * 0.866, y + r * 0.5);
+                    ctx.lineTo(cx, y - r);
+                    ctx.closePath();
+                }
+                ctx.fill();
+
+                const isSelectedDot = selectedDot === d;
+                const isSelectedTrack = selectedTrack === track && !hideNonSelectedTracks;
+                const isHoverDot = newHoverDot === d;
+
+                if (isSelectedDot || isSelectedTrack || isHoverDot) {
+                    ctx.strokeStyle = isSelectedDot ? '#ff0000' :
+                        (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
+                    ctx.stroke();
+                }
+            };
+
+            drawShape(x);
+            drawShape(x - worldWidth);
+            drawShape(x + worldWidth);
+        }
     }
 
     function setZoomAbsolute(newZoomAmt, pivotX = AppState.WIDTH / 2, pivotY = (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) + (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / 2) {
@@ -472,7 +481,7 @@ const Renderer = (() => {
 
         AppState.setZoomAmt(clamped);
         AppState.setNeedsIndexRebuild(true); // Zoom changes screen coords -> Rebuild
-        
+
         const zoomSliderEl = AppState.getZoomSliderEl();
         if (zoomSliderEl) zoomSliderEl.value = String(clamped);
         requestRedraw();
@@ -481,7 +490,7 @@ const Renderer = (() => {
     function setZoomRelative(delta, pivotX, pivotY) {
         setZoomAbsolute(AppState.getZoomAmt() + delta, pivotX, pivotY);
     }
-    
+
     function createCoordinatesTab(container) {
         const coordTab = document.createElement('div');
         coordTab.id = 'coordinates-tab';
