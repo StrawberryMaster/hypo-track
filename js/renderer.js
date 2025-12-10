@@ -446,14 +446,16 @@ const Renderer = (() => {
                 }
                 ctx.fill();
 
-                const isSelectedDot = selectedDot === d;
-                const isSelectedTrack = selectedTrack === track && !hideNonSelectedTracks;
-                const isHoverDot = newHoverDot === d;
+                if (!hideNonSelectedTracks) {
+                    const isSelectedDot = selectedDot === d;
+                    const isSelectedTrack = selectedTrack === track;
+                    const isHoverDot = newHoverDot === d;
 
-                if (isSelectedDot || isSelectedTrack || isHoverDot) {
-                    ctx.strokeStyle = isSelectedDot ? '#ff0000' :
-                        (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
-                    ctx.stroke();
+                    if (isSelectedDot || isSelectedTrack || isHoverDot) {
+                        ctx.strokeStyle = isSelectedDot ? '#ff0000' :
+                            (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
+                        ctx.stroke();
+                    }
                 }
             };
 
