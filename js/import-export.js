@@ -1,16 +1,16 @@
 // import and export functionality for HURDAT and JSON formats
 
 const ImportExport = (() => {
-    
+
     // HURDAT export helpers
     const HURDAT_FORMATS = {
         HEADER: (id, count) => `${id},                STORMNAME,     ${count},\n`,
         ENTRY: (year, month, day, time, type, lat, lon, wind, pressure) =>
             `${year}${month}${day}, ${time},  , ${type}, ${lat}, ${lon}, ${wind}, ${pressure},\n`
     };
-    
+
     const TYPE_CODES = { EX: 'EX', SD: 'SD', SS: 'SS', TD: 'TD', TS: 'TS', HU: 'HU' };
-    
+
     const STAGE_NAMES = {
         EX: 'Extratropical cyclone', SD: 'Subtropical cyclone', SS: 'Subtropical cyclone',
         TD: 'Tropical cyclone', TS: 'Tropical cyclone', HU: 'Tropical cyclone'
@@ -117,7 +117,7 @@ const ImportExport = (() => {
         const result = { tracks: [] };
         const tracks = AppState.getTracks();
         const masterCategories = AppState.getMasterCategories();
-        
+
         tracks.forEach((track, trackIndex) => {
             if (track.length === 0) return;
             const stormName = track.name || `STORM ${trackIndex + 1}`;
@@ -216,96 +216,155 @@ const ImportExport = (() => {
         const reader = new FileReader();
         reader.onload = () => {
             try {
-                const lines = reader.result.split('\n');
-                const tracks = [];
-                let currentTrack = null;
-                const masterCategories = AppState.getMasterCategories();
+                const text = reader.result;
+                const lines = text.split(/\r?\n/).map(l => l.replace(/\u00A0/g, ' ').trim()).filter(l => l.length > 0);
+                const headerRe = /^([A-Z]{2}\d{6}),\s*([^,]{0,12}?),\s*(\d+),/i;
 
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (!line) continue;
+                let importedTracks = [];
+                let currentTrack = [];
+                let stormName = '';
+                let firstDate = null;
+                let firstTime = null;
 
-                    const parts = line.split(',').map(p => p.trim());
+                const mapTypeCode = (code) => {
+                    if (!code) return 0;
+                    const c = code.trim().toUpperCase();
+                    if (c === 'EX') return 2;
+                    if (c === 'SD' || c === 'SS') return 1;
+                    return 0;
+                };
 
-                    // check if this is a header line (storm ID line)
-                    if (parts.length >= 3 && parts[0].length <= 8 && !parts[0].includes(' ')) {
-                        // this is a header line
-                        if (currentTrack && currentTrack.length > 0) {
-                            tracks.push(currentTrack);
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    // header
+                    const h = line.match(headerRe);
+                    if (h) {
+                        if (currentTrack.length > 0) {
+                            currentTrack.startDate = firstDate || '';
+                            currentTrack.startTime = firstTime !== null ? firstTime : undefined;
+                            currentTrack.name = stormName || '';
+                            importedTracks.push(currentTrack);
+                            currentTrack = [];
                         }
-                        currentTrack = [];
-                        
-                        // extract storm name from header
-                        const stormName = parts[1];
-                        if (stormName && stormName !== 'STORMNAME') {
-                            currentTrack.name = stormName;
-                        }
-                        
-                        // extract start date from first entry (next line)
-                        if (i + 1 < lines.length) {
-                            const nextLine = lines[i + 1].trim();
-                            const nextParts = nextLine.split(',').map(p => p.trim());
-                            if (nextParts.length >= 2 && nextParts[0].length === 8) {
-                                currentTrack.startDate = nextParts[0];
-                                const timeStr = nextParts[1];
-                                currentTrack.startTime = parseInt(timeStr.substring(0, 2), 10);
-                            }
-                        }
+                        // preserve storm name where provided; ignore placeholder STORMNAME
+                        stormName = (h[2] || '').trim();
+                        if (stormName.toUpperCase().includes('STORMNAME')) stormName = '';
+                        firstDate = null;
+                        firstTime = null;
                         continue;
                     }
 
-                    // this should be a data line
-                    if (parts.length < 7 || !currentTrack) continue;
+                    // attempt to parse entry by splitting on commas
+                    const parts = line.split(',').map(p => p.trim());
+                    if (parts.length < 4) continue;
 
-                    // parse data: DATE, TIME, unused, TYPE, LAT, LON, WIND, PRESSURE
-                    const typeCode = parts[3];
-                    const latStr = parts[4];
-                    const lonStr = parts[5];
-                    const windStr = parts[6];
-                    const pressureStr = parts.length >= 8 ? parts[7] : '1015';
+                    // detect date/time at start
+                    const datePart = parts[0];
+                    const timePart = parts[1];
+                    if (!/^\d{8}$/.test(datePart) || !/^\d{4}$/.test(timePart)) continue;
 
-                    // parse latitude and longitude
-                    const lat = Utils.parseCoordinate(latStr);
-                    const lon = Utils.parseCoordinate(lonStr);
-                    const wind = parseInt(windStr, 10) || 0;
-                    const pressure = parseInt(pressureStr, 10) || 1015;
+                    const typeCode = (parts[3] || '').toUpperCase();
+                    const latRaw = (parts[4] || '').replace(/\s+/g, '');
+                    const lonRaw = (parts[5] || '').replace(/\s+/g, '');
+                    const windRaw = (parts[6] || '').replace(/\s+/g, '');
+                    const presRaw = (parts[7] || '').replace(/\s+/g, '');
 
-                    // determine type based on type code
-                    let type = 0; // tropical by default
-                    if (typeCode === 'EX') type = 2; // extratropical
-                    else if (typeCode === 'SD' || typeCode === 'SS') type = 1; // subtropical
-
-                    // find category based on wind speed
-                    let cat = 0;
-                    for (let j = Models.DEFAULT_CATEGORIES.length - 1; j >= 0; j--) {
-                        if (wind >= Models.DEFAULT_CATEGORIES[j].speed) {
-                            cat = j;
-                            break;
-                        }
+                    if (!firstDate) firstDate = datePart;
+                    if (firstTime === null) {
+                        const tnum = parseInt(timePart, 10);
+                        firstTime = isNaN(tnum) ? undefined : Math.floor(tnum / 100);
                     }
 
-                    const point = new Models.TrackPoint(lon, lat, cat, type, wind, pressure);
-                    currentTrack.push(point);
+                    // parse lat
+                    let lat = null, lon = null;
+                    let m = latRaw.match(/^([0-9.+-]+)\s*([NS])$/i) || latRaw.match(/^([NS])\s*([0-9.+-]+)$/i);
+                    if (m) {
+                        if (m[2] && /[NS]/i.test(m[2])) {
+                            lat = parseFloat(m[1]) * (m[2].toUpperCase() === 'S' ? -1 : 1);
+                        } else if (m[1] && /[NS]/i.test(m[1])) {
+                            lat = parseFloat(m[2]) * (m[1].toUpperCase() === 'S' ? -1 : 1);
+                        }
+                    } else {
+                        const t = latRaw.replace(/[^0-9.\-NSns]/g, '');
+                        const last = t.slice(-1).toUpperCase();
+                        const num = parseFloat(t.slice(0, -1));
+                        if (!isNaN(num) && (last === 'N' || last === 'S')) lat = num * (last === 'S' ? -1 : 1);
+                    }
+
+                    // parse lon
+                    m = lonRaw.match(/^([0-9.+-]+)\s*([EW])$/i) || lonRaw.match(/^([EW])\s*([0-9.+-]+)$/i);
+                    if (m) {
+                        if (m[2] && /[EW]/i.test(m[2])) {
+                            lon = parseFloat(m[1]) * (m[2].toUpperCase() === 'W' ? -1 : 1);
+                        } else if (m[1] && /[EW]/i.test(m[1])) {
+                            lon = parseFloat(m[2]) * (m[1].toUpperCase() === 'W' ? -1 : 1);
+                        }
+                    } else {
+                        const t = lonRaw.replace(/[^0-9.\-EWew]/g, '');
+                        const last = t.slice(-1).toUpperCase();
+                        const num = parseFloat(t.slice(0, -1));
+                        if (!isNaN(num) && (last === 'E' || last === 'W')) lon = num * (last === 'W' ? -1 : 1);
+                    }
+
+                    // parse wind/pressure - treat non-numeric or -999/-99 as null
+                    const wind = (windRaw === '' || windRaw === '-999' || windRaw === '-99') ? null : (isNaN(parseInt(windRaw, 10)) ? null : parseInt(windRaw, 10));
+                    const pressure = (presRaw === '' || presRaw === '-999' || presRaw === '-99') ? null : (isNaN(parseInt(presRaw, 10)) ? null : parseInt(presRaw, 10));
+
+                    if (lat !== null && lon !== null) {
+                        const ptType = mapTypeCode(typeCode);
+                        const determineCategoryIndex = (windVal) => {
+                            const masterCategories = AppState.getMasterCategories();
+                            if (windVal === null || windVal === undefined || isNaN(windVal)) {
+                                let unknownIdx = masterCategories.findIndex(c => c.name && c.name.toLowerCase() === 'unknown');
+                                return unknownIdx !== -1 ? unknownIdx : masterCategories.length - 1;
+                            }
+                            let bestIdx = null;
+                            let bestSpeed = -Infinity;
+                            for (let ci = 0; ci < masterCategories.length; ci++) {
+                                const s = Number(masterCategories[ci].speed || 0);
+                                if (!isNaN(s) && s <= windVal && s > bestSpeed) {
+                                    bestSpeed = s;
+                                    bestIdx = ci;
+                                }
+                            }
+                            if (bestIdx !== null) return bestIdx;
+                            // pick category with minimum speed
+                            let minIdx = 0;
+                            let minSpeed = Number(masterCategories[0].speed || 0);
+                            for (let ci = 1; ci < masterCategories.length; ci++) {
+                                const s = Number(masterCategories[ci].speed || 0);
+                                if (s < minSpeed) { minSpeed = s; minIdx = ci; }
+                            }
+                            return minIdx;
+                        };
+
+                        const catIndex = determineCategoryIndex(wind);
+                        const point = new Models.TrackPoint(lon, lat, catIndex, ptType, wind, pressure);
+                        currentTrack.push(point);
+                    }
                 }
 
-                // add the last track
-                if (currentTrack && currentTrack.length > 0) {
-                    tracks.push(currentTrack);
+                // finalize last track if any
+                if (currentTrack.length > 0) {
+                    currentTrack.startDate = firstDate || '';
+                    currentTrack.startTime = firstTime !== null ? firstTime : undefined;
+                    currentTrack.name = stormName || '';
+                    importedTracks.push(currentTrack);
                 }
 
-                if (tracks.length === 0) {
-                    alert('No valid tracks found in HURDAT file.');
+                if (importedTracks.length === 0) {
+                    alert('No valid HURDAT data found.');
                     return;
                 }
 
-                AppState.setTracks(tracks);
+                AppState.setTracks(importedTracks);
                 Database.save();
                 History.reset();
                 Utils.deselectTrack();
                 const refreshGUI = AppState.getRefreshGUI();
                 if (refreshGUI) refreshGUI();
-                
-                alert(`Successfully imported ${tracks.length} track(s).`);
+
+                alert(`Successfully imported ${importedTracks.length} track(s).`);
             } catch (error) {
                 alert('Error importing HURDAT file: ' + error.message);
                 console.error('HURDAT import error:', error);
