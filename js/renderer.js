@@ -50,15 +50,8 @@ const Renderer = (() => {
 
                 if (mapData) {
                     const blob = new Blob([mapData], { type: 'image/jpeg' });
-                    const url = URL.createObjectURL(blob);
-                    const customMapImg = new Image();
-                    customMapImg.decoding = 'async';
-                    await new Promise((resolve, reject) => {
-                        customMapImg.onload = () => { URL.revokeObjectURL(url); resolve(); };
-                        customMapImg.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
-                        customMapImg.src = url;
-                    });
-                    AppState.setCustomMapImg(customMapImg);
+                    const bitmap = await createImageBitmap(blob);
+                    AppState.setCustomMapImg(bitmap);
                     AppState.setLoadedMapImg(true);
                     return;
                 } else {
@@ -86,23 +79,12 @@ const Renderer = (() => {
                 worker.postMessage({ paths });
             });
 
-            const urls = [];
             const images = await Promise.all(
                 result.map(async (buffer) => {
                     const blob = new Blob([buffer], { type: 'image/webp' });
-                    const url = URL.createObjectURL(blob);
-                    urls.push(url);
-                    const img = new Image();
-                    img.decoding = 'async';
-                    await new Promise((resolve, reject) => {
-                        img.onload = resolve;
-                        img.onerror = reject;
-                        img.src = url;
-                    });
-                    return img;
+                    return createImageBitmap(blob);
                 })
             );
-            urls.forEach(url => URL.revokeObjectURL(url));
             const mapImgs = AppState.getMapImgs();
             Object.assign(mapImgs, Object.fromEntries(
                 Array.from(IMAGE_PATHS.keys()).map((key, i) => [key, images[i]])
@@ -664,8 +646,15 @@ const Renderer = (() => {
         zoomSliderEl.addEventListener('input', () => setZoomAbsolute(parseFloat(zoomSliderEl.value), pivotX, pivotY), { passive: true });
 
         // toggle acceleration during manual UI zoom interactions
-        const startZoomUI = () => Utils.setHardwareAcceleration(true);
-        const stopZoomUI = () => Utils.setHardwareAcceleration(false);
+        let accTimeout;
+        const startZoomUI = () => {
+            clearTimeout(accTimeout);
+            Utils.setHardwareAcceleration(true);
+        };
+        const stopZoomUI = () => {
+            clearTimeout(accTimeout);
+            accTimeout = setTimeout(() => Utils.setHardwareAcceleration(false), 500);
+        };
 
         [zoomOutBtnEl, zoomInBtnEl, zoomSliderEl].forEach(el => {
             el.addEventListener('mousedown', startZoomUI, { passive: true });
