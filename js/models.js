@@ -13,13 +13,15 @@ const Models = (() => {
     ];
 
     class TrackPoint {
-        constructor(long, lat, cat, type, wind, pressure) {
+        constructor(long, lat, cat, type, wind, pressure, date, time) {
             this.long = long || 0;
             this.lat = lat || 0;
             this.cat = cat || 0;
             this.type = type || 0;
             this.wind = (wind !== undefined && wind !== null && !isNaN(wind)) ? Number(wind) : null;
             this.pressure = (pressure !== undefined && pressure !== null && !isNaN(pressure)) ? Number(pressure) : null;
+            this.date = date || null; // YYYYMMDD
+            this.time = time !== undefined ? time : null; // HH
         }
     }
 

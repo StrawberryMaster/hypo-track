@@ -402,11 +402,34 @@ const Events = (() => {
             AppState.setSelectedTrack(track);
         }
 
+        let newDate = null;
+        let newTime = null;
+        
+        if (insertIndex > 0) {
+            const prevDot = track[insertIndex - 1];
+            if (prevDot.date && prevDot.time !== null) {
+                const interval = AppState.getConeTimeInterval();
+                let year = parseInt(prevDot.date.substring(0, 4));
+                let month = parseInt(prevDot.date.substring(4, 6)) - 1;
+                let day = parseInt(prevDot.date.substring(6, 8));
+                let hour = parseInt(prevDot.time);
+                let dateObj = new Date(Date.UTC(year, month, day, hour + interval, 0, 0));
+                
+                newDate = `${dateObj.getUTCFullYear()}${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}${String(dateObj.getUTCDate()).padStart(2, '0')}`;
+                newTime = dateObj.getUTCHours();
+            }
+        } else if (track.startDate && track.startTime !== undefined) {
+            newDate = track.startDate;
+            newTime = track.startTime;
+        }
+
         const newDot = new Models.TrackPoint(
             Utils.mouseLong(evt),
             Utils.mouseLat(evt),
             AppState.getCategoryToPlace(),
-            AppState.getTypeToPlace()
+            AppState.getTypeToPlace(),
+            null, null,
+            newDate, newTime
         );
         track.splice(insertIndex, 0, newDot);
         AppState.setSelectedDot(newDot);
@@ -420,6 +443,8 @@ const Events = (() => {
             lat: newDot.lat,
             cat: newDot.cat,
             type: newDot.type,
+            date: newDot.date,
+            time: newDot.time,
             newTrack: track.length === 1
         });
         if (AppState.getAutosave()) Database.save();
@@ -507,6 +532,8 @@ const Events = (() => {
             type: point.type,
             wind: point.wind,
             pressure: point.pressure,
+            date: point.date,
+            time: point.time,
             trackDeleted
         });
         Renderer.requestRedraw();

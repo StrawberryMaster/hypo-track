@@ -128,7 +128,9 @@ const ImportExport = (() => {
                 speed: getWindSpeed(point),
                 pressure: getPressure(point),
                 category: masterCategories[point.cat]?.name || 'Unknown',
-                stage: getStageName(point)
+                stage: getStageName(point),
+                date: point.date,
+                time: point.time
             })));
         });
         return result;
@@ -189,7 +191,9 @@ const ImportExport = (() => {
                             cat,
                             type,
                             pointData.speed,
-                            pointData.pressure
+                            pointData.pressure,
+                            pointData.date,
+                            pointData.time
                         );
                     });
                     // assign name to the track array itself
@@ -378,6 +382,7 @@ const ImportExport = (() => {
         exportJSON,
         importJSONFile,
         importHURDATFile,
+        getTypeCode,
         getWindSpeed,
         getPressure,
         getStageName

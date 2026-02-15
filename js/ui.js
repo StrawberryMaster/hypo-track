@@ -74,6 +74,22 @@
             .dropdown-item:hover {
                 background-color: #e9e9e9;
             }
+            .modal-content {
+                background-color: #fefefe;
+                margin: 5% auto;
+                padding: 20px;
+                border: 1px solid #888;
+                width: 80%;
+                max-width: 400px;
+                border-radius: 5px;
+                color: #333;
+            }
+            .modal-content h3 { margin-top: 0; color: #333; }
+            .modal-content label { color: #555; font-size: 13px; }
+            .modal-content input[type="text"], .modal-content input[type="number"], .modal-content select {
+                width: 100%;
+                margin-bottom: 10px;
+            }
         `;
         document.head.appendChild(style);
 
@@ -232,30 +248,45 @@
         pressureOverrideInput.min = '800';
         pressureOverrideInput.max = '1050';
 
+        const dateOverrideInput = textbox('point-date-input', 'Date (YYYYMMDD):', pointInfoFragment);
+        dateOverrideInput.pattern = "\\d{8}";
+        const timeOverrideInput = textbox('point-time-input', 'Time (HH):', pointInfoFragment);
+        timeOverrideInput.type = 'number';
+        timeOverrideInput.min = '0';
+        timeOverrideInput.max = '23';
+
         const modifyTrackPointButton = button('Modify track point', pointInfoFragment);
         modifyTrackPointButton.onclick = () => {
             const selectedDot = AppState.getSelectedDot();
             if (!selectedDot) return;
             const oldCat = selectedDot.cat, oldType = selectedDot.type;
             const oldWind = selectedDot.wind, oldPressure = selectedDot.pressure;
+            const oldDate = selectedDot.date, oldTime = selectedDot.time;
 
             const newWindVal = document.getElementById('wind-override-input').value;
             const newPressureVal = document.getElementById('pressure-override-input').value;
+            const newDateVal = document.getElementById('point-date-input').value;
+            const newTimeVal = document.getElementById('point-time-input').value;
 
             const newWind = newWindVal === '' ? null : parseInt(newWindVal, 10);
             const newPressure = newPressureVal === '' ? null : parseInt(newPressureVal, 10);
+            const newDate = newDateVal === '' ? null : newDateVal;
+            const newTime = newTimeVal === '' ? null : parseInt(newTimeVal, 10);
 
             selectedDot.cat = parseInt(categorySelect.value, 10);
             selectedDot.type = typeSelectData[typeSelect.value];
             selectedDot.wind = isNaN(newWind) ? null : newWind;
             selectedDot.pressure = isNaN(newPressure) ? null : newPressure;
+            selectedDot.date = newDate;
+            selectedDot.time = isNaN(newTime) ? null : newTime;
 
             const selectedTrack = AppState.getSelectedTrack();
             History.record(History.ActionTypes.modifyPoint, {
                 trackIndex: AppState.getTracks().indexOf(selectedTrack),
                 pointIndex: selectedTrack.indexOf(selectedDot),
                 oldCat, oldType, newCat: selectedDot.cat, newType: selectedDot.type,
-                oldWind, oldPressure, newWind: selectedDot.wind, newPressure: selectedDot.pressure
+                oldWind, oldPressure, newWind: selectedDot.wind, newPressure: selectedDot.pressure,
+                oldDate, oldTime, newDate, newTime
             });
             if (AppState.getAutosave()) Database.save();
             Renderer.requestRedraw();
@@ -316,6 +347,99 @@
 
         createLabeledElement('dot-size-select', 'Dot size:', dotSizeSelect, dotSizeContainer);
         buttons.appendChild(dotSizeContainer);
+
+        // ConeGen settings //
+        const conegenBtn = button('ConeGen Mode', buttons);
+        const conegenModal = div();
+        conegenModal.className = 'modal';
+        document.body.appendChild(conegenModal);
+
+        const conegenContent = div();
+        conegenContent.className = 'modal-content';
+        conegenModal.appendChild(conegenContent);
+
+        const conegenTitle = createElement('h3', { textContent: 'ConeGen settings (experimental!)', style: 'margin-top:0' });
+        conegenContent.appendChild(conegenTitle);
+
+        const cgNote = createElement('p', { 
+            style: 'font-size: 11px; color: #666; line-height: 1.4; margin-bottom: 15px;'
+        });
+        cgNote.innerHTML = `Note: This module is experimental and may have bugs. For a feature-rich standalone alternative, try <a href="https://rightside124.github.io/Cyclone-Cone-Maker/" target="_blank" style="color: #00b6d5;">Cyclone Cone Maker</a>.`;
+        conegenContent.appendChild(cgNote);
+
+        const cgFrag = new DocumentFragment();
+
+        const appendSection = (title) => {
+            const h4 = createElement('h4', { textContent: title, style: 'margin: 15px 0 8px 0; border-bottom: 1px solid #eee; padding-bottom: 3px; font-size: 13px;' });
+            cgFrag.appendChild(h4);
+        };
+
+        appendSection('Display modes');
+        const cgModeCb = checkbox('cg-mode-cb', 'Enable CodeGen display mode', cgFrag);
+        cgModeCb.onchange = () => { AppState.setConeGenMode(cgModeCb.checked); Renderer.requestRedraw(); };
+
+        const cgConeVisibleCb = checkbox('cg-cone-visible-cb', 'Show cone of uncertainty', cgFrag);
+        cgConeVisibleCb.onchange = () => { AppState.setConeVisible(cgConeVisibleCb.checked); Renderer.requestRedraw(); };
+
+        appendSection('Units & Time');
+        const cgMultiUnitCb = checkbox('cg-multi-unit-cb', 'Show dual units', cgFrag);
+        cgMultiUnitCb.onchange = () => { AppState.setConeShowMultiUnit(cgMultiUnitCb.checked); Renderer.requestRedraw(); };
+
+        const unitSelectData = { 'MPH': 'mph', 'KPH': 'kph', 'KT': 'kt' };
+        const unitSelect = dropdown('cg-unit-select', 'Primary unit:', unitSelectData, cgFrag);
+        unitSelect.onchange = () => { AppState.setConeUnit(unitSelect.value); Renderer.requestRedraw(); };
+        unitSelect.value = AppState.getConeUnit();
+
+        const timeIntervalInput = textbox('cg-time-interval', 'Time interval (in hours):', cgFrag);
+        timeIntervalInput.type = 'number';
+        timeIntervalInput.value = AppState.getConeTimeInterval();
+        timeIntervalInput.oninput = () => AppState.setConeTimeInterval(parseFloat(timeIntervalInput.value) || 6);
+
+        appendSection('Visual Style');
+        const fontSelectData = { 'Arial': 'Arial', 'Comic Sans MS': 'Comic Sans MS', 'Custom...': 'custom' };
+        const fontSelect = dropdown('cg-font-select', 'Font Family:', fontSelectData, cgFrag);
+        fontSelect.onchange = () => { AppState.setConeFontFamily(fontSelect.value); Renderer.requestRedraw(); };
+
+        const textSizeInput = textbox('cg-text-size', 'Label text size:', cgFrag);
+        textSizeInput.type = 'range'; textSizeInput.min = '8'; textSizeInput.max = '24';
+        textSizeInput.value = AppState.getConeTextSize();
+        textSizeInput.oninput = () => { AppState.setConeTextSize(parseInt(textSizeInput.value)); Renderer.requestRedraw(); };
+
+        const cgOutlineCb = checkbox('cg-outline-cb', 'Force point outlines?', cgFrag);
+        cgOutlineCb.onchange = () => { AppState.setConePointOutline(cgOutlineCb.checked); Renderer.requestRedraw(); };
+
+        const cgOutlineColor = textbox('cg-outline-color', 'Outline color:', cgFrag);
+        cgOutlineColor.type = 'color';
+        cgOutlineColor.value = AppState.getConeOutlineColor();
+        cgOutlineColor.oninput = () => { AppState.setConeOutlineColor(cgOutlineColor.value); Renderer.requestRedraw(); };
+
+        const coneGrowthInput = textbox('cg-cone-growth', 'Cone spread:', cgFrag);
+        coneGrowthInput.type = 'range'; coneGrowthInput.min = '5'; coneGrowthInput.max = '200';
+        coneGrowthInput.value = AppState.getConeGrowth();
+        coneGrowthInput.oninput = () => { AppState.setConeGrowth(parseInt(coneGrowthInput.value)); Renderer.requestRedraw(); };
+
+        appendSection('Tools');
+        const cgCascadeBtn = button('Cascade dates (from selection)', cgFrag);
+        cgCascadeBtn.onclick = () => {
+            const selectedTrack = AppState.getSelectedTrack();
+            const selectedDot = AppState.getSelectedDot();
+            if (selectedTrack && selectedDot) {
+                const startIndex = selectedTrack.indexOf(selectedDot);
+                const subTrack = selectedTrack.slice(startIndex);
+                ConeGen.cascadeDateTime(subTrack);
+                if (AppState.getAutosave()) Database.save();
+                Renderer.requestRedraw();
+                refreshGUI();
+            } else {
+                alert('Please select a point to cascade from.');
+            }
+        };
+
+        const closeCgBtn = button('Close', cgFrag);
+        closeCgBtn.onclick = () => conegenModal.style.display = 'none';
+
+        conegenContent.appendChild(cgFrag);
+        conegenBtn.onclick = () => conegenModal.style.display = 'block';
 
         // Save/Load UI //
         const saveloadContainer = div();
@@ -929,6 +1053,8 @@
                 pointInfoContainer.style.display = 'block';
                 windOverrideInput.value = selectedDot.wind ?? '';
                 pressureOverrideInput.value = selectedDot.pressure ?? '';
+                document.getElementById('point-date-input').value = selectedDot.date ?? '';
+                document.getElementById('point-time-input').value = selectedDot.time ?? '';
                 windOverrideInput.placeholder = `e.g. ${AppState.getMasterCategories()[selectedDot.cat]?.speed || 'N/A'}`;
                 pressureOverrideInput.placeholder = `e.g.: ${AppState.getMasterCategories()[selectedDot.cat]?.pressure || 'N/A'}`;
             } else {
@@ -946,6 +1072,16 @@
             autosaveCheckbox.checked = AppState.getAutosave();
             saveButton.disabled = newSeasonButton.disabled = !AppState.getSaveLoadReady();
             saveNameTextbox.value = AppState.getSaveName() || '';
+
+            // sync ConeGen modal inputs
+            const cgModeCb = document.getElementById('cg-mode-cb');
+            if (cgModeCb) cgModeCb.checked = AppState.getConeGenMode();
+            const cgConeCb = document.getElementById('cg-cone-visible-cb');
+            if (cgConeCb) cgConeCb.checked = AppState.getConeVisible();
+            const cgUnitSel = document.getElementById('cg-unit-select');
+            if (cgUnitSel) cgUnitSel.value = AppState.getConeUnit();
+            const cgOutlineCb = document.getElementById('cg-outline-cb');
+            if (cgOutlineCb) cgOutlineCb.checked = AppState.getConePointOutline();
 
             refreshMapDropdown();
             Utils.updateCoordinatesDisplay();

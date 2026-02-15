@@ -148,6 +148,9 @@ const Renderer = (() => {
         }
 
         drawMap(viewW, viewH);
+        if (AppState.getConeVisible()) {
+            drawCone(viewW, viewH);
+        }
         drawTracks(viewW, viewH);
     }
 
@@ -451,9 +454,14 @@ const Renderer = (() => {
                     const isSelectedTrack = selectedTrack === track;
                     const isHoverDot = newHoverDot === d;
 
-                    if (isSelectedDot || isSelectedTrack || isHoverDot) {
-                        ctx.strokeStyle = isSelectedDot ? '#ff0000' :
-                            (isSelectedTrack ? '#ffff00' : 'rgba(255,255,255,0.5)');
+                    const forceOutline = AppState.getConeGenMode() && AppState.getConePointOutline();
+
+                    if (isSelectedDot || isSelectedTrack || isHoverDot || forceOutline) {
+                        if (isSelectedDot) ctx.strokeStyle = '#ff0000';
+                        else if (isSelectedTrack) ctx.strokeStyle = '#ffff00';
+                        else if (forceOutline) ctx.strokeStyle = AppState.getConeOutlineColor();
+                        else ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                        
                         ctx.stroke();
                     }
                 }
@@ -463,6 +471,132 @@ const Renderer = (() => {
             drawShape(x - worldWidth);
             drawShape(x + worldWidth);
         }
+
+        if (AppState.getConeGenMode()) {
+            drawConeGenLabels(pointsToRender, worldWidth);
+        }
+    }
+
+    function drawCone(viewWidth, viewHeight) {
+        const selectedTrack = AppState.getSelectedTrack();
+        if (!selectedTrack || selectedTrack.length < 2) return;
+
+        const ctx = AppState.getCtx();
+        const appWidth = AppState.WIDTH;
+        const appHeight = AppState.HEIGHT;
+        const topBound = appHeight - appWidth / 2;
+        const panLocation = AppState.getPanLocation();
+        const worldWidth = AppState.WIDTH * Utils.zoomMult();
+
+        const growth = AppState.getConeGrowth();
+        const opacity = AppState.getConeOpacity();
+        const tint = AppState.getConeColor();
+        
+        // convert track to screen points
+        const screenPoints = selectedTrack.map(d => {
+            return {
+                x: ((d.long - panLocation.long + 360) % 360) / viewWidth * appWidth,
+                y: (panLocation.lat - d.lat) / viewHeight * appWidth / 2 + topBound
+            };
+        });
+
+        const upperSide = []; const lowerSide = [];
+        for (let i = 0; i < screenPoints.length; i++) {
+            let r = (i / (screenPoints.length - 1)) * growth;
+            let angle = ConeGen.getPerpAngle(screenPoints, i);
+            upperSide.push({ x: screenPoints[i].x + Math.cos(angle - Math.PI / 2) * r, y: screenPoints[i].y + Math.sin(angle - Math.PI / 2) * r });
+            lowerSide.push({ x: screenPoints[i].x + Math.cos(angle + Math.PI / 2) * r, y: screenPoints[i].y + Math.sin(angle + Math.PI / 2) * r });
+        }
+
+        const drawConePath = (ox) => {
+            ctx.beginPath();
+            ctx.fillStyle = ConeGen.hexToRgba(tint, opacity);
+            ctx.moveTo(upperSide[0].x + ox, upperSide[0].y);
+            for (let i = 0; i < upperSide.length - 1; i++) {
+                const xc = (upperSide[i].x + upperSide[i+1].x) / 2 + ox;
+                const yc = (upperSide[i].y + upperSide[i+1].y) / 2;
+                ctx.quadraticCurveTo(upperSide[i].x + ox, upperSide[i].y, xc, yc);
+            }
+            const lastScreen = screenPoints[screenPoints.length-1];
+            const lastUpper = upperSide[upperSide.length-1];
+            ctx.lineTo(lastUpper.x + ox, lastUpper.y);
+            
+            const prevScreen = screenPoints[screenPoints.length-2] || lastScreen;
+            const endAngle = Math.atan2(lastScreen.y - prevScreen.y, lastScreen.x - prevScreen.x);
+            ctx.arc(lastScreen.x + ox, lastScreen.y, growth, endAngle - Math.PI/2, endAngle + Math.PI/2);
+            
+            ctx.lineTo(lowerSide[lowerSide.length-1].x + ox, lowerSide[lowerSide.length-1].y);
+            for (let i = lowerSide.length - 1; i > 0; i--) {
+                const xc = (lowerSide[i].x + lowerSide[i-1].x) / 2 + ox;
+                const yc = (lowerSide[i].y + lowerSide[i-1].y) / 2;
+                ctx.quadraticCurveTo(lowerSide[i].x + ox, lowerSide[i].y, xc, yc);
+            }
+            ctx.closePath();
+            ctx.fill();
+        };
+
+        drawConePath(0);
+        drawConePath(-worldWidth);
+        drawConePath(worldWidth);
+    }
+
+    function drawConeGenLabels(pointsToRender, worldWidth) {
+        const ctx = AppState.getCtx();
+        
+        const zoomBase = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
+        const dotSize = (2 * zoomBase) * AppState.getDotSizeMultiplier();
+        
+        const tSize = AppState.getConeTextSize();
+        const fontFam = AppState.getConeFontFamily() === 'custom' ? AppState.getConeCustomFontName() : AppState.getConeFontFamily();
+        const showMulti = AppState.getConeShowMultiUnit();
+        const currentUnit = AppState.getConeUnit();
+
+        ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+        
+        const drawTextWithHalo = (text, x, y, size, weight = "600", alpha = 1) => {
+            ctx.font = `${weight} ${size}px "${fontFam}", sans-serif`;
+            ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.lineWidth = 4; ctx.strokeText(text, x, y);
+            ctx.fillStyle = `rgba(255,255,255,${alpha})`; ctx.fillText(text, x, y);
+        };
+
+        pointsToRender.forEach(({x, y, d, track}) => {
+            let typeStr = ImportExport.getTypeCode(d);
+            
+            let dateStr = "";
+            if (d.date) {
+                const month = d.date.substring(4, 6);
+                const day = d.date.substring(6, 8);
+                dateStr = `${month}/${day}`;
+            }
+            let timeStr = (d.time !== null && d.time !== undefined) ? String(d.time).padStart(2, '0') + "z" : "";
+            
+            let header = `${typeStr} ${dateStr} ${timeStr}`.trim();
+            
+            const drawLabelAt = (cx) => {
+                if (cx < -200 || cx > AppState.WIDTH + 200) return;
+                
+                const labelXOffset = (dotSize / 2) + 8;
+                drawTextWithHalo(header, cx + labelXOffset, y - (tSize/2), tSize, "600", 1);
+                
+                let windVal = ImportExport.getWindSpeed(d);
+                let pressureVal = ImportExport.getPressure(d);
+                let unitName = currentUnit.toUpperCase();
+                let displayWind = ConeGen.convertWind(windVal, 'kt', currentUnit);
+                
+                let windLabel = `${displayWind} ${unitName}`;
+                if (showMulti) {
+                    let secondary = (currentUnit === 'mph') ? 'kph' : (currentUnit === 'kph' ? 'kt' : 'mph');
+                    const secondaryVal = ConeGen.convertWind(windVal, 'kt', secondary);
+                    windLabel += ` / ${secondaryVal} ${secondary.toUpperCase()}`;
+                }
+                let subLabel = `${windLabel}${pressureVal ? ' | ' + pressureVal + 'mb' : ''}`;
+                drawTextWithHalo(subLabel, cx + labelXOffset, y + (tSize/2) + 2, tSize - 1, "500", 0.85);
+            };
+
+            drawLabelAt(x);
+            drawLabelAt(x - worldWidth);
+            drawLabelAt(x + worldWidth);
+        });
     }
 
     function setZoomAbsolute(newZoomAmt, pivotX = AppState.WIDTH / 2, pivotY = (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) + (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / 2) {
@@ -494,139 +628,32 @@ const Renderer = (() => {
     }
 
     function createCoordinatesTab(container) {
-        const coordTab = document.createElement('div');
-        coordTab.id = 'coordinates-tab';
-        coordTab.className = 'hidden';
-        coordTab.style.cssText = `
-             position: absolute;
-             top: 10px;
-             right: 10px;
-             background: rgba(0, 0, 0, 0.8);
-             color: #fff;
-             padding: .6em .2em;
-             border-radius: .2em;
-            /* hint compositor to improve opacity/transform transitions */
-            will-change: opacity, transform;
-             font-family: "Consolas", "Courier New", monospace;
-             font-size: 12px;
-             z-index: 1000;
-             min-width: 120px;
-             text-align: center;
-             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-             backdrop-filter: blur(5px);
-             transition: opacity 0.2s ease;
-             pointer-events: none;
-         `;
-
-        const coordLabel = document.createElement('div');
-        coordLabel.className = 'coord-label';
-        coordLabel.textContent = 'Coordinates';
-        coordLabel.style.cssText = `
-            font-size: 10px;
-            color: #ccc;
-            margin-bottom: 2px;
-        `;
-
-        const latElement = document.createElement('div');
-        latElement.id = 'coord-lat';
-        latElement.className = 'coord-value';
-        latElement.textContent = '--';
-        latElement.style.cssText = `
-            font-weight: bold;
-            font-size: 11px;
-        `;
-
-        const lonElement = document.createElement('div');
-        lonElement.id = 'coord-lon';
-        lonElement.className = 'coord-value';
-        lonElement.textContent = '--';
-        lonElement.style.cssText = `
-            font-weight: bold;
-            font-size: 11px;
-        `;
-
-        coordTab.appendChild(coordLabel);
-        coordTab.appendChild(latElement);
-        coordTab.appendChild(lonElement);
-        container.appendChild(coordTab);
-
-        const style = document.createElement('style');
-        style.textContent = `
-            #coordinates-tab.hidden {
-                opacity: 0;
-                pointer-events: none;
-            }
-            .btn-small { padding: 2px 4px; font-size: 10px; margin-left: 4px; }
-        `;
-        document.head.appendChild(style);
+        const coordTab = document.getElementById('coordinates-tab');
+        if (!coordTab) return;
     }
 
     // zoom controls overlay
     function createZoomControls(container) {
-        const wrap = document.createElement('div');
-        wrap.id = 'zoom-controls';
-        wrap.style.cssText = `
-             position: absolute;
-             bottom: 10px;
-             right: 10px;
-             display: flex;
-             align-items: center;
-             gap: 6px;
-             background: rgba(0,0,0,0.6);
-             padding: 6px 8px;
-             border-radius: 6px;
-            /* compositing hint to help smooth transformations */
-            will-change: transform;
-            transform: translate3d(0,0,0);
-             z-index: 1000;
-             color: #fff;
-             backdrop-filter: blur(3px);
-             user-select: none;
-         `;
+        const wrap = document.getElementById('zoom-controls');
+        const zoomOutBtnEl = document.getElementById('zoom-out-btn');
+        const zoomInBtnEl = document.getElementById('zoom-in-btn');
+        const zoomSliderEl = document.getElementById('zoom-slider');
 
-        const btnStyle = `
-            background: #2c2c2c; color: #fff; border: 1px solid #555; border-radius: 4px;
-            width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-            font-size: 16px; line-height: 1; cursor: pointer;
-        `;
+        if (!wrap || !zoomOutBtnEl || !zoomInBtnEl || !zoomSliderEl) return;
 
-        const zoomOutBtnEl = document.createElement('button');
-        zoomOutBtnEl.type = 'button';
-        zoomOutBtnEl.textContent = '−';
-        zoomOutBtnEl.style.cssText = btnStyle;
-
-        const zoomInBtnEl = document.createElement('button');
-        zoomInBtnEl.type = 'button';
-        zoomInBtnEl.textContent = '+';
-        zoomInBtnEl.style.cssText = btnStyle;
-
-        const zoomSliderEl = document.createElement('input');
-        zoomSliderEl.type = 'range';
-        zoomSliderEl.min = '0';
-        zoomSliderEl.max = '15';
-        zoomSliderEl.step = '0.25';
+        // update slider to current state
         zoomSliderEl.value = String(AppState.getZoomAmt());
-        zoomSliderEl.style.cssText = `
-            width: 140px;
-            accent-color: #6ec1ea;
-        `;
-
-        wrap.appendChild(zoomOutBtnEl);
-        wrap.appendChild(zoomSliderEl);
-        wrap.appendChild(zoomInBtnEl);
-        container.appendChild(wrap);
 
         // store references in state
         AppState.setZoomInBtnEl(zoomInBtnEl);
         AppState.setZoomOutBtnEl(zoomOutBtnEl);
         AppState.setZoomSliderEl(zoomSliderEl);
 
-        // if canvas already exists, ensure it's promoted to its own layer as well
+        // promote canvas to its own layer
         const canvas = AppState.getCanvas();
         if (canvas) {
             canvas.style.willChange = 'transform';
             canvas.style.transform = 'translate3d(0,0,0)';
-            canvas.style.webkitTransform = 'translate3d(0,0,0)';
         }
 
         const pivotX = AppState.WIDTH / 2;

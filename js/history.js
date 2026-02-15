@@ -46,13 +46,15 @@ const History = (() => {
             point.type = d.oldType;
             point.wind = d.oldWind;
             point.pressure = d.oldPressure;
+            point.date = d.oldDate;
+            point.time = d.oldTime;
         } else if (t === ActionTypes.deletePoint) {
             let track;
             if (d.trackDeleted) {
                 track = [];
                 tracks.splice(d.trackIndex, 0, track);
             } else track = tracks[d.trackIndex];
-            const point = new Models.TrackPoint(d.long, d.lat, d.cat, d.type, d.wind, d.pressure);
+            const point = new Models.TrackPoint(d.long, d.lat, d.cat, d.type, d.wind, d.pressure, d.date, d.time);
             track.splice(d.pointIndex, 0, point);
         } else if (t === ActionTypes.setTrackDate) {
             const track = tracks[d.trackIndex];
@@ -88,7 +90,7 @@ const History = (() => {
                 track = [];
                 tracks.push(track);
             } else track = tracks[d.trackIndex];
-            const point = new Models.TrackPoint(d.long, d.lat, d.cat, d.type);
+            const point = new Models.TrackPoint(d.long, d.lat, d.cat, d.type, d.wind, d.pressure, d.date, d.time);
             track.splice(d.pointIndex, 0, point);
         } else if (t === ActionTypes.movePoint) {
             const point = tracks[d.trackIndex][d.pointIndex];
@@ -100,6 +102,8 @@ const History = (() => {
             point.type = d.newType;
             point.wind = d.newWind;
             point.pressure = d.newPressure;
+            point.date = d.newDate;
+            point.time = d.newTime;
         } else if (t === ActionTypes.deletePoint) {
             const track = tracks[d.trackIndex];
             const point = track[d.pointIndex];

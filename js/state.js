@@ -81,6 +81,22 @@ const AppState = (() => {
     let needsRedraw = true;
     let isRedrawScheduled = false;
 
+    // ConeGen state
+    let coneGenMode = false;
+    let coneUnit = 'kt';
+    let coneShowMultiUnit = false;
+    let coneTimeInterval = 6;
+    let coneFontFamily = 'Inter';
+    let coneCustomFontName = '';
+    let coneTextSize = 11;
+    let conePointOutline = true;
+    let coneOutlineColor = '#ffffff';
+    let coneVisible = false;
+    let coneColor = '#ffffff';
+    let coneOpacity = 0.3;
+    let coneGrowth = 90;
+    let coneIncludeLegend = true;
+
     // UI elements
     let zoomInBtnEl = null;
     let zoomOutBtnEl = null;
@@ -198,6 +214,36 @@ const AppState = (() => {
         setNeedsRedraw: (val) => needsRedraw = val,
         getIsRedrawScheduled: () => isRedrawScheduled,
         setIsRedrawScheduled: (val) => isRedrawScheduled = val,
+
+        // ConeGen getters and setters
+        getConeGenMode: () => coneGenMode,
+        setConeGenMode: (val) => coneGenMode = val,
+        getConeUnit: () => coneUnit,
+        setConeUnit: (val) => coneUnit = val,
+        getConeShowMultiUnit: () => coneShowMultiUnit,
+        setConeShowMultiUnit: (val) => coneShowMultiUnit = val,
+        getConeTimeInterval: () => coneTimeInterval,
+        setConeTimeInterval: (val) => coneTimeInterval = val,
+        getConeFontFamily: () => coneFontFamily,
+        setConeFontFamily: (val) => coneFontFamily = val,
+        getConeCustomFontName: () => coneCustomFontName,
+        setConeCustomFontName: (val) => coneCustomFontName = val,
+        getConeTextSize: () => coneTextSize,
+        setConeTextSize: (val) => coneTextSize = val,
+        getConePointOutline: () => conePointOutline,
+        setConePointOutline: (val) => conePointOutline = val,
+        getConeOutlineColor: () => coneOutlineColor,
+        setConeOutlineColor: (val) => coneOutlineColor = val,
+        getConeVisible: () => coneVisible,
+        setConeVisible: (val) => coneVisible = val,
+        getConeColor: () => coneColor,
+        setConeColor: (val) => coneColor = val,
+        getConeOpacity: () => coneOpacity,
+        setConeOpacity: (val) => coneOpacity = val,
+        getConeGrowth: () => coneGrowth,
+        setConeGrowth: (val) => coneGrowth = val,
+        getConeIncludeLegend: () => coneIncludeLegend,
+        setConeIncludeLegend: (val) => coneIncludeLegend = val,
 
         getZoomInBtnEl: () => zoomInBtnEl,
         setZoomInBtnEl: (el) => zoomInBtnEl = el,

@@ -34,6 +34,7 @@
   <script src="js/database.js"></script>
   <script src="js/history.js"></script>
   <script src="js/import-export.js"></script>
+  <script src="js/conegen.js"></script>
   <script src="js/renderer.js"></script>
   <script src="js/events.js"></script>
   <script src="js/ui.js"></script>
@@ -41,7 +42,19 @@
 </head>
 
 <body>
-  <div id="canvas-container"></div>
+  <div id="canvas-container">
+    <div id="coordinates-tab" class="hidden">
+      <div class="coord-label">Coordinates</div>
+      <div id="coord-lat" class="coord-value">--</div>
+      <div id="coord-lon" class="coord-value">--</div>
+    </div>
+
+    <div id="zoom-controls">
+      <button type="button" id="zoom-out-btn">−</button>
+      <input type="range" id="zoom-slider" min="0" max="15" step="0.25" value="0">
+      <button type="button" id="zoom-in-btn">+</button>
+    </div>
+  </div>
   <div id="ui-container">
     <div id="theme-selector-container">
       <label id="theme-select-label" for="theme-select">Theme selector</label>

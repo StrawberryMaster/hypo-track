@@ -262,3 +262,90 @@ img {
     font-weight: bold;
     font-size: 11px;
 }
+/* Zoom overlay for the canvas */
+#zoom-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,0,0,0.6);
+    padding: 6px 8px;
+    border-radius: 6px;
+    will-change: transform;
+    transform: translate3d(0,0,0);
+    z-index: 1000;
+    color: #fff;
+    backdrop-filter: blur(3px);
+    user-select: none;
+}
+
+#zoom-controls button {
+    background: #2c2c2c;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#zoom-slider {
+    width: 140px;
+    accent-color: #6ec1ea;
+}
+
+#coordinates-tab {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: .6em .2em;
+    border-radius: .2em;
+    will-change: opacity, transform;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    z-index: 1000;
+    min-width: 120px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(5px);
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+#coordinates-tab.hidden {
+    opacity: 0;
+}
+
+.coord-label {
+    font-size: 10px;
+    color: #ccc;
+    margin-bottom: 2px;
+}
+
+.coord-value {
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.btn-small { padding: 2px 4px; font-size: 10px; margin-left: 4px; }
