@@ -174,6 +174,18 @@ const Utils = (() => {
         }
     }
 
+    function setHardwareAcceleration(enabled) {
+        const canvas = AppState.getCanvas();
+        if (!canvas) return;
+        if (enabled) {
+            canvas.style.willChange = 'transform';
+            canvas.style.transform = 'translate3d(0,0,0)';
+        } else {
+            canvas.style.willChange = 'auto';
+            canvas.style.transform = 'none';
+        }
+    }
+
     return {
         parseCoordinate,
         normalizeLongitude,
@@ -196,6 +208,7 @@ const Utils = (() => {
         getOffsetFromTouch,
         distanceBetweenTouches,
         midpointBetweenTouches,
-        regenerateMasterCategories
+        regenerateMasterCategories,
+        setHardwareAcceleration
     };
 })();

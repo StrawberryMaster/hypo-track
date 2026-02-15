@@ -27,6 +27,13 @@
             #browser-actions { display: flex; gap: 5px; flex-wrap: wrap; }
             #browser-actions .btn { flex-grow: 1; }
 
+            /* promote canvas to its own composite layer to help smooth map panning/zooming */
+            #canvas-container canvas { 
+                will-change: transform; 
+                transform: translate3d(0,0,0); 
+                -webkit-transform: translate3d(0,0,0);
+            }
+
             .dropdown-container {
                 border: none;
                 position: relative;

@@ -49,6 +49,7 @@ const Events = (() => {
         canvas.addEventListener('mousedown', (evt) => {
             if (evt.button !== 0 || !Utils.isValidMousePosition(evt) || !AppState.getLoadedMapImg()) return;
 
+            Utils.setHardwareAcceleration(true);
             AppState.setBeginClickX(evt.offsetX);
             AppState.setBeginClickY(evt.offsetY);
             AppState.setIsDragging(true);
@@ -124,6 +125,7 @@ const Events = (() => {
         canvas.addEventListener('mouseup', (evt) => {
             if (evt.button !== 0 || !AppState.getBeginClickX()) return; // Simplified check
 
+            Utils.setHardwareAcceleration(false);
             AppState.setIsDragging(false);
             const mouseMode = AppState.getMouseMode();
 
@@ -147,6 +149,7 @@ const Events = (() => {
             if (!AppState.getLoadedMapImg() || !AppState.getPanLocation() || evt.touches.length === 0) return;
             evt.preventDefault();
 
+            Utils.setHardwareAcceleration(true);
             if (evt.touches.length === 1) {
                 // fresh single-touch: allow tap unless it turns into pinch later
                 AppState.setSuppressNextTap(false);
@@ -293,16 +296,21 @@ const Events = (() => {
 
             // if a pinch/multi-touch occurred during this gesture, suppress any tap actions on last finger up
             if (isLastFinger && AppState.getSuppressNextTap()) {
+                Utils.setHardwareAcceleration(false);
                 AppState.setSuppressNextTap(false);
                 resetInteractionState();
                 Renderer.requestRedraw();
                 return;
             }
 
-            if (!AppState.getIsTouching()) return;
+            if (!AppState.getIsTouching()) {
+                Utils.setHardwareAcceleration(false);
+                return;
+            }
 
             AppState.setIsDragging(false);
             AppState.setIsTouching(false);
+            Utils.setHardwareAcceleration(false);
 
             // If user tapped (no significant move) and not in drag/move modes, add/select or delete
             const touchStartX = AppState.getTouchStartX();
@@ -337,6 +345,7 @@ const Events = (() => {
 
         canvas.addEventListener('touchcancel', (evt) => {
             evt.preventDefault();
+            Utils.setHardwareAcceleration(false);
             AppState.getPinch().active = false;
             AppState.setSuppressNextTap(false);
             resetInteractionState();

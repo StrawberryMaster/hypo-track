@@ -498,23 +498,25 @@ const Renderer = (() => {
         coordTab.id = 'coordinates-tab';
         coordTab.className = 'hidden';
         coordTab.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: .6em .2em;
-            border-radius: .2em;
-            font-family: "Consolas", "Courier New", monospace;
-            font-size: 12px;
-            z-index: 1000;
-            min-width: 120px;
-            text-align: center;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(5px);
-            transition: opacity 0.2s ease;
-            pointer-events: none;
-        `;
+             position: absolute;
+             top: 10px;
+             right: 10px;
+             background: rgba(0, 0, 0, 0.8);
+             color: #fff;
+             padding: .6em .2em;
+             border-radius: .2em;
+            /* hint compositor to improve opacity/transform transitions */
+            will-change: opacity, transform;
+             font-family: "Consolas", "Courier New", monospace;
+             font-size: 12px;
+             z-index: 1000;
+             min-width: 120px;
+             text-align: center;
+             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+             backdrop-filter: blur(5px);
+             transition: opacity 0.2s ease;
+             pointer-events: none;
+         `;
 
         const coordLabel = document.createElement('div');
         coordLabel.className = 'coord-label';
@@ -564,20 +566,23 @@ const Renderer = (() => {
         const wrap = document.createElement('div');
         wrap.id = 'zoom-controls';
         wrap.style.cssText = `
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(0,0,0,0.6);
-            padding: 6px 8px;
-            border-radius: 6px;
-            z-index: 1000;
-            color: #fff;
-            backdrop-filter: blur(3px);
-            user-select: none;
-        `;
+             position: absolute;
+             bottom: 10px;
+             right: 10px;
+             display: flex;
+             align-items: center;
+             gap: 6px;
+             background: rgba(0,0,0,0.6);
+             padding: 6px 8px;
+             border-radius: 6px;
+            /* compositing hint to help smooth transformations */
+            will-change: transform;
+            transform: translate3d(0,0,0);
+             z-index: 1000;
+             color: #fff;
+             backdrop-filter: blur(3px);
+             user-select: none;
+         `;
 
         const btnStyle = `
             background: #2c2c2c; color: #fff; border: 1px solid #555; border-radius: 4px;
@@ -616,12 +621,31 @@ const Renderer = (() => {
         AppState.setZoomOutBtnEl(zoomOutBtnEl);
         AppState.setZoomSliderEl(zoomSliderEl);
 
+        // if canvas already exists, ensure it's promoted to its own layer as well
+        const canvas = AppState.getCanvas();
+        if (canvas) {
+            canvas.style.willChange = 'transform';
+            canvas.style.transform = 'translate3d(0,0,0)';
+            canvas.style.webkitTransform = 'translate3d(0,0,0)';
+        }
+
         const pivotX = AppState.WIDTH / 2;
         const pivotY = (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) + (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / 2;
 
         zoomOutBtnEl.addEventListener('click', () => setZoomRelative(-0.5, pivotX, pivotY), { passive: true });
         zoomInBtnEl.addEventListener('click', () => setZoomRelative(0.5, pivotX, pivotY), { passive: true });
         zoomSliderEl.addEventListener('input', () => setZoomAbsolute(parseFloat(zoomSliderEl.value), pivotX, pivotY), { passive: true });
+
+        // toggle acceleration during manual UI zoom interactions
+        const startZoomUI = () => Utils.setHardwareAcceleration(true);
+        const stopZoomUI = () => Utils.setHardwareAcceleration(false);
+
+        [zoomOutBtnEl, zoomInBtnEl, zoomSliderEl].forEach(el => {
+            el.addEventListener('mousedown', startZoomUI, { passive: true });
+            el.addEventListener('touchstart', startZoomUI, { passive: true });
+            el.addEventListener('mouseup', stopZoomUI, { passive: true });
+            el.addEventListener('touchend', stopZoomUI, { passive: true });
+        });
     }
 
     return {
