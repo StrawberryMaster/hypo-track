@@ -359,11 +359,12 @@ const Events = (() => {
 
         const mvw = Utils.mapViewWidth();
         const mvh = Utils.mapViewHeight();
+        const mapRect = Utils.getMapRenderRect();
         const beginPanX = AppState.getBeginPanX();
         const beginPanY = AppState.getBeginPanY();
 
-        panLocation.long = Utils.normalizeLongitude(beginPanX - mvw * (currX - startX) / AppState.WIDTH);
-        panLocation.lat = Utils.constrainLatitude(beginPanY + mvh * (currY - startY) / (AppState.WIDTH / 2), mvh);
+        panLocation.long = Utils.normalizeLongitude(beginPanX - mvw * (currX - startX) / mapRect.width);
+        panLocation.lat = Utils.constrainLatitude(beginPanY + mvh * (currY - startY) / mapRect.height, mvh);
     }
 
     function resetInteractionState() {

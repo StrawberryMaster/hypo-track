@@ -141,11 +141,15 @@ const Renderer = (() => {
         const panLocation = AppState.getPanLocation();
         const width = AppState.WIDTH;
         const height = AppState.HEIGHT;
+        const mapRect = Utils.getMapRenderRect();
+        const mapLeft = mapRect.left;
+        const mapTop = mapRect.top;
+        const mapWidth = mapRect.width;
+        const mapHeight = mapRect.height;
 
         if (!mvw) mvw = Utils.mapViewWidth();
         if (!mvh) mvh = Utils.mapViewHeight();
 
-        const topBound = height - width / 2;
         const west = panLocation.long;
         const north = panLocation.lat;
         const south = north - mvh;
@@ -164,10 +168,10 @@ const Renderer = (() => {
             sw = Math.max(1, sw);
             sh = Math.max(1, sh);
 
-            let dx = width * (qw - west) / mvw;
-            let dw = width * (qe - qw) / mvw;
-            let dy = (height - topBound) * (qn - north) / (south - north) + topBound;
-            let dh = (height - topBound) * (qs - qn) / (south - north);
+            let dx = mapWidth * (qw - west) / mvw + mapLeft;
+            let dw = mapWidth * (qe - qw) / mvw;
+            let dy = mapHeight * (qn - north) / (south - north) + mapTop;
+            let dh = mapHeight * (qs - qn) / (south - north);
 
             const rDx = Math.round(dx);
             const rDy = Math.round(dy);
@@ -187,7 +191,7 @@ const Renderer = (() => {
                 sh += overlap * scaleY;
             }
 
-            if (sw > 0 && sh > 0 && rDx + rDw > 0 && rDx < width && sx < img.width && sy < img.height) {
+            if (sw > 0 && sh > 0 && rDx + rDw > mapLeft && rDx < mapLeft + mapWidth && sx < img.width && sy < img.height) {
                 ctx.drawImage(img, sx, sy, sw, sh, rDx, rDy, rDw, rDh);
             } else {
                 ctx.fillStyle = "#efefef";
@@ -203,16 +207,16 @@ const Renderer = (() => {
             const sh = customMapImg.height * mvh / (mapNorth - mapSouth);
             const sx = customMapImg.width * (west + 180) / 360;
             const sw = customMapImg.width * mvw / 360;
-            const dy = topBound;
-            const dh = height - topBound;
+            const dy = mapTop;
+            const dh = mapHeight;
 
             if (sx + sw > customMapImg.width) {
                 const sw1 = customMapImg.width - sx;
-                const dw1 = width * (sw1 / sw);
-                ctx.drawImage(customMapImg, sx, sy, sw1, sh, 0, dy, dw1, dh);
-                ctx.drawImage(customMapImg, 0, sy, sw - sw1, sh, dw1, dy, width - dw1, dh);
+                const dw1 = mapWidth * (sw1 / sw);
+                ctx.drawImage(customMapImg, sx, sy, sw1, sh, mapLeft, dy, dw1, dh);
+                ctx.drawImage(customMapImg, 0, sy, sw - sw1, sh, mapLeft + dw1, dy, mapWidth - dw1, dh);
             } else {
-                ctx.drawImage(customMapImg, sx, sy, sw, sh, 0, dy, width, dh);
+                ctx.drawImage(customMapImg, sx, sy, sw, sh, mapLeft, dy, mapWidth, dh);
             }
         } else {
             const mapImgs = AppState.getMapImgs();
@@ -250,28 +254,30 @@ const Renderer = (() => {
         const panLocation = AppState.getPanLocation();
         const viewWidth = Utils.mapViewWidth();
         const viewHeight = Utils.mapViewHeight();
-        const worldWidth = AppState.WIDTH * Utils.zoomMult();
-        const appWidth = AppState.WIDTH;
-        const appHeight = AppState.HEIGHT;
-        const topBound = appHeight - appWidth / 2;
+        const mapRect = Utils.getMapRenderRect();
+        const worldWidth = mapRect.width * Utils.zoomMult();
+        const leftBound = mapRect.left;
+        const rightBound = mapRect.left + mapRect.width;
+        const topBound = mapRect.top;
+        const bottomBound = mapRect.top + mapRect.height;
 
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i];
             for (let j = 0; j < track.length; j++) {
                 const point = track[j];
-                const x = ((point.long - panLocation.long + 360) % 360) / viewWidth * appWidth;
-                const y = (panLocation.lat - point.lat) / viewHeight * appWidth / 2 + topBound;
-                const inBounds = x >= 0 && x < appWidth && y >= topBound && y < appHeight;
+                const x = ((point.long - panLocation.long + 360) % 360) / viewWidth * mapRect.width + mapRect.left;
+                const y = (panLocation.lat - point.lat) / viewHeight * mapRect.height + topBound;
+                const inBounds = x >= leftBound && x < rightBound && y >= topBound && y < bottomBound;
 
                 if (inBounds) {
                     spatialIndex.insert({ screenX: x, screenY: y, point, track });
                 }
 
                 const leftX = x - worldWidth;
-                if (leftX > -100 && leftX < appWidth + 100) spatialIndex.insert({ screenX: leftX, screenY: y, point, track });
+                if (leftX > leftBound - 100 && leftX < rightBound + 100) spatialIndex.insert({ screenX: leftX, screenY: y, point, track });
 
                 const rightX = x + worldWidth;
-                if (rightX > -100 && rightX < appWidth + 100) spatialIndex.insert({ screenX: rightX, screenY: y, point, track });
+                if (rightX > leftBound - 100 && rightX < rightBound + 100) spatialIndex.insert({ screenX: rightX, screenY: y, point, track });
             }
         }
         AppState.setNeedsIndexRebuild(false);
@@ -284,7 +290,8 @@ const Renderer = (() => {
         const zoomBase = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
         const baseDotSize = 2 * zoomBase;
         const dotSize = baseDotSize * AppState.getDotSizeMultiplier();
-        const worldWidth = AppState.WIDTH * Utils.zoomMult();
+        const mapRect = Utils.getMapRenderRect();
+        const worldWidth = mapRect.width * Utils.zoomMult();
         const panLocation = AppState.getPanLocation();
         const tracks = AppState.getTracks();
         const hideNonSelectedTracks = AppState.getHideNonSelectedTracks();
@@ -292,9 +299,10 @@ const Renderer = (() => {
         const selectedDot = AppState.getSelectedDot();
         const masterCategories = AppState.getMasterCategories();
         const useAltColors = AppState.getUseAltColors();
-        const appWidth = AppState.WIDTH;
-        const appHeight = AppState.HEIGHT;
-        const topBound = appHeight - appWidth / 2;
+        const leftBound = mapRect.left;
+        const rightBound = mapRect.left + mapRect.width;
+        const topBound = mapRect.top;
+        const bottomBound = mapRect.top + mapRect.height;
 
         // hover hit testing constants
         const mouseX = canvas.mouseX;
@@ -327,8 +335,8 @@ const Renderer = (() => {
                 const d = track[j];
                 const coords = getCoords();
 
-                coords.x = ((d.long - panLocation.long + 360) % 360) / viewWidth * appWidth;
-                coords.y = (panLocation.lat - d.lat) / viewHeight * appWidth / 2 + topBound;
+                coords.x = ((d.long - panLocation.long + 360) % 360) / viewWidth * mapRect.width + mapRect.left;
+                coords.y = (panLocation.lat - d.lat) / viewHeight * mapRect.height + topBound;
 
                 // line segments logic
                 if (prevX !== null) {
@@ -397,7 +405,7 @@ const Renderer = (() => {
 
         // rendering points
         const yMin = topBound - dotSize / 2;
-        const yMax = appHeight + dotSize / 2;
+        const yMax = bottomBound + dotSize / 2;
         let lastFillStyle = null;
 
         for (let i = 0; i < pointsToRender.length; i++) {
@@ -414,7 +422,7 @@ const Renderer = (() => {
 
             const drawShape = (cx) => {
                 // horizontal culling
-                if (cx < -dotSize || cx > appWidth + dotSize) return;
+                if (cx < leftBound - dotSize || cx > rightBound + dotSize) return;
 
                 ctx.beginPath();
                 if (d.type === 0) {
@@ -464,11 +472,10 @@ const Renderer = (() => {
         if (!selectedTrack || selectedTrack.length < 2) return;
 
         const ctx = AppState.getCtx();
-        const appWidth = AppState.WIDTH;
-        const appHeight = AppState.HEIGHT;
-        const topBound = appHeight - appWidth / 2;
+        const mapRect = Utils.getMapRenderRect();
+        const topBound = mapRect.top;
         const panLocation = AppState.getPanLocation();
-        const worldWidth = AppState.WIDTH * Utils.zoomMult();
+        const worldWidth = mapRect.width * Utils.zoomMult();
 
         const growth = AppState.getConeGrowth();
         const opacity = AppState.getConeOpacity();
@@ -477,8 +484,8 @@ const Renderer = (() => {
         // convert track to screen points
         const screenPoints = selectedTrack.map(d => {
             return {
-                x: ((d.long - panLocation.long + 360) % 360) / viewWidth * appWidth,
-                y: (panLocation.lat - d.lat) / viewHeight * appWidth / 2 + topBound
+                x: ((d.long - panLocation.long + 360) % 360) / viewWidth * mapRect.width + mapRect.left,
+                y: (panLocation.lat - d.lat) / viewHeight * mapRect.height + topBound
             };
         });
 
@@ -524,6 +531,7 @@ const Renderer = (() => {
 
     function drawConeGenLabels(pointsToRender, worldWidth) {
         const ctx = AppState.getCtx();
+        const mapRect = Utils.getMapRenderRect();
         
         const zoomBase = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
         const dotSize = (2 * zoomBase) * AppState.getDotSizeMultiplier();
@@ -555,7 +563,7 @@ const Renderer = (() => {
             let header = `${typeStr} ${dateStr} ${timeStr}`.trim();
             
             const drawLabelAt = (cx) => {
-                if (cx < -200 || cx > AppState.WIDTH + 200) return;
+                if (cx < mapRect.left - 200 || cx > mapRect.left + mapRect.width + 200) return;
                 
                 const labelXOffset = (dotSize / 2) + 8;
                 drawTextWithHalo(header, cx + labelXOffset, y - (tSize/2), tSize, "600", 1);
@@ -589,10 +597,10 @@ const Renderer = (() => {
         const newViewW = 360 / Math.pow(AppState.ZOOM_BASE, clamped);
         const newViewH = 180 / Math.pow(AppState.ZOOM_BASE, clamped);
 
-        const topBound = AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO;
+        const mapRect = Utils.getMapRenderRect();
         const panLocation = AppState.getPanLocation();
-        panLocation.long += (oldViewW - newViewW) * (pivotX / AppState.WIDTH);
-        panLocation.lat -= (oldViewH - newViewH) * ((pivotY - topBound) / (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO));
+        panLocation.long += (oldViewW - newViewW) * ((pivotX - mapRect.left) / mapRect.width);
+        panLocation.lat -= (oldViewH - newViewH) * ((pivotY - mapRect.top) / mapRect.height);
 
         panLocation.long = Utils.normalizeLongitude(panLocation.long);
         panLocation.lat = Utils.constrainLatitude(panLocation.lat, newViewH);
@@ -638,8 +646,9 @@ const Renderer = (() => {
             canvas.style.transform = 'translate3d(0,0,0)';
         }
 
-        const pivotX = AppState.WIDTH / 2;
-        const pivotY = (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) + (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / 2;
+        const mapRect = Utils.getMapRenderRect();
+        const pivotX = mapRect.left + mapRect.width / 2;
+        const pivotY = mapRect.top + mapRect.height / 2;
 
         zoomOutBtnEl.addEventListener('click', () => setZoomRelative(-0.5, pivotX, pivotY), { passive: true });
         zoomInBtnEl.addEventListener('click', () => setZoomRelative(0.5, pivotX, pivotY), { passive: true });

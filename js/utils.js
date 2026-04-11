@@ -45,33 +45,70 @@ const Utils = (() => {
         return 180 / zoomMult();
     }
 
+    function getMapRenderRect() {
+        const baseLeft = 0;
+        const baseTop = AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO;
+        const baseWidth = AppState.WIDTH;
+        const baseHeight = AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO;
+
+        const customMapImg = AppState.getCustomMapImg();
+        if (!AppState.getUseCustomMap() || !customMapImg || !customMapImg.width || !customMapImg.height) {
+            return { left: baseLeft, top: baseTop, width: baseWidth, height: baseHeight };
+        }
+
+        const baseRatio = baseWidth / baseHeight;
+        const imageRatio = customMapImg.width / customMapImg.height;
+
+        let width = baseWidth;
+        let height = baseHeight;
+
+        if (imageRatio > baseRatio) {
+            height = baseWidth / imageRatio;
+        } else {
+            width = baseHeight * imageRatio;
+        }
+
+        const left = baseLeft + (baseWidth - width) / 2;
+        const top = baseTop + (baseHeight - height) / 2;
+        return { left, top, width, height };
+    }
+
     // mouse position utilities
     function mouseLong(evt) {
-        return AppState.getPanLocation().long + (evt.offsetX * mapViewWidth()) / AppState.WIDTH;
+        const mapRect = getMapRenderRect();
+        return AppState.getPanLocation().long + ((evt.offsetX - mapRect.left) * mapViewWidth()) / mapRect.width;
     }
 
     function mouseLat(evt) {
-        const relativeY = evt.offsetY - (AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO);
-        return AppState.getPanLocation().lat - (relativeY * mapViewHeight()) / (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO);
+        const mapRect = getMapRenderRect();
+        const relativeY = evt.offsetY - mapRect.top;
+        return AppState.getPanLocation().lat - (relativeY * mapViewHeight()) / mapRect.height;
     }
 
     function isValidMousePosition(evt) {
-        const x = evt.offsetX, y = evt.offsetY;
-        return x > 0 && x < AppState.WIDTH && y > (AppState.HEIGHT - AppState.WIDTH / 2) && y < AppState.HEIGHT;
+        const x = evt.offsetX;
+        const y = evt.offsetY;
+        const mapRect = getMapRenderRect();
+        return x > mapRect.left && x < mapRect.left + mapRect.width && y > mapRect.top && y < mapRect.top + mapRect.height;
     }
 
     function isValidPositionXY(x, y) {
-        return x > 0 && x < AppState.WIDTH && y > (AppState.HEIGHT - AppState.WIDTH / 2) && y < AppState.HEIGHT;
+        const mapRect = getMapRenderRect();
+        return x > mapRect.left && x < mapRect.left + mapRect.width && y > mapRect.top && y < mapRect.top + mapRect.height;
     }
 
     function longLatToScreenCoords({ long, lat }) {
         const viewWidth = mapViewWidth();
         const viewHeight = mapViewHeight();
-        const topBound = AppState.HEIGHT - AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO;
+        const mapRect = getMapRenderRect();
         const panLocation = AppState.getPanLocation();
-        const x = ((long - panLocation.long + 360) % 360) * AppState.WIDTH / viewWidth;
-        const y = (panLocation.lat - lat) * (AppState.WIDTH * AppState.VIEW_HEIGHT_RATIO) / viewHeight + topBound;
-        return { x, y, inBounds: x >= 0 && x < AppState.WIDTH && y >= topBound && y < AppState.HEIGHT };
+        const x = ((long - panLocation.long + 360) % 360) * mapRect.width / viewWidth + mapRect.left;
+        const y = (panLocation.lat - lat) * mapRect.height / viewHeight + mapRect.top;
+        return {
+            x,
+            y,
+            inBounds: x >= mapRect.left && x < mapRect.left + mapRect.width && y >= mapRect.top && y < mapRect.top + mapRect.height
+        };
     }
 
     // number formatting
@@ -195,6 +232,7 @@ const Utils = (() => {
         zoomMult,
         mapViewWidth,
         mapViewHeight,
+        getMapRenderRect,
         mouseLong,
         mouseLat,
         isValidMousePosition,
