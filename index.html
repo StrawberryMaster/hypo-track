@@ -5,10 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HypoTrack</title>
-
   <meta name="description" content="Plot your very own cyclone track maps">
-  <meta name="keywords"
-    content="trackgen, track generator, tropical cyclone, track map, hurricane, typhoon, cyclone, storm, weather, meteorology, data visualization, open source">
   <meta name="author" content="Monsoonjr99, StrawberryMaster">
   <meta name="theme-color" content="#00b6d5">
 
@@ -39,6 +36,41 @@
   <script src="js/events.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "HypoTrack",
+    "url": "https://strawberrymaster.github.io/hypo-track/",
+    "description": "Plot your very own cyclone track maps",
+    "applicationCategory": "UtilityApplication",
+    "operatingSystem": "All",
+    "browserRequirements": "Requires JavaScript. Requires HTML5 Canvas.",
+    "image": "https://strawberrymaster.github.io/hypo-track/resources/favicon.png",
+    "screenshot": "https://strawberrymaster.github.io/hypo-track/resources/favicon.png",
+    "author": [
+      {
+        "@type": "Person",
+        "name": "Monsoonjr99",
+        "url": "https://github.com/Monsoonjr99"
+      },
+      {
+        "@type": "Person",
+        "name": "StrawberryMaster",
+        "url": "https://github.com/StrawberryMaster"
+      }
+    ],
+    "featureList": [
+      "Interactive canvas-based track map rendering with zoom controls",
+      "Spatial coordinate tracking",
+      "Cone of uncertainty generation",
+      "Local database storage for storm history",
+      "Track data import and export",
+      "Multiple color themes"
+    ]
+  }
+  </script>
 </head>
 
 <body>
