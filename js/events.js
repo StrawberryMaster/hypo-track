@@ -5,6 +5,14 @@ const Events = (() => {
     const ZOOM_SENSITIVITY = 1 / 125;
     const DRAG_THRESHOLD = 20;
 
+    let latestMouseOffsetX = 0;
+    let latestMouseOffsetY = 0;
+    let isMouseTickRunning = false;
+
+    let latestTouchX = 0;
+    let latestTouchY = 0;
+    let isTouchTickRunning = false;
+
     function pickNearestPoint(x, y, radius) {
         if (AppState.getNeedsIndexRebuild()) {
             Renderer.buildSpatialIndex();
@@ -74,13 +82,13 @@ const Events = (() => {
             Renderer.requestRedraw();
         });
 
-        let isMouseTickRunning = false;
-
         canvas.addEventListener('mousemove', (evt) => {
             const oldX = canvas.mouseX;
             const oldY = canvas.mouseY;
             canvas.mouseX = evt.offsetX;
             canvas.mouseY = evt.offsetY;
+            latestMouseOffsetX = evt.offsetX;
+            latestMouseOffsetY = evt.offsetY;
 
             if (AppState.getIsDragging() || oldX !== canvas.mouseX || oldY !== canvas.mouseY) {
                 Renderer.requestRedraw();
@@ -90,21 +98,22 @@ const Events = (() => {
 
             isMouseTickRunning = true;
             requestAnimationFrame(() => {
-                handleMouseMoveLogic(evt);
+                handleMouseMoveLogic(latestMouseOffsetX, latestMouseOffsetY);
                 isMouseTickRunning = false;
             });
         });
 
-        function handleMouseMoveLogic(evt) {
-            if (!AppState.getIsDragging() || !Utils.isValidMousePosition(evt) || !AppState.getPanLocation()) return;
+        function handleMouseMoveLogic(offsetX, offsetY) {
+            if (!AppState.getIsDragging() || !AppState.getPanLocation()) return;
 
             const mouseMode = AppState.getMouseMode();
 
             if (mouseMode === 2) {
                 const selectedDot = AppState.getSelectedDot();
                 if (selectedDot) {
-                    selectedDot.long = Utils.mouseLong(evt);
-                    selectedDot.lat = Utils.mouseLat(evt);
+                    const fakeEvt = { offsetX, offsetY };
+                    selectedDot.long = Utils.mouseLong(fakeEvt);
+                    selectedDot.lat = Utils.mouseLat(fakeEvt);
                     AppState.setNeedsIndexRebuild(true); // Mark index dirty immediately
                     Renderer.requestRedraw();
                 }
@@ -113,11 +122,13 @@ const Events = (() => {
 
             const beginClickX = AppState.getBeginClickX();
             const beginClickY = AppState.getBeginClickY();
-            const dist = Math.hypot(evt.offsetX - beginClickX, evt.offsetY - beginClickY);
+            const dx = offsetX - beginClickX;
+            const dy = offsetY - beginClickY;
+            const distSq = dx * dx + dy * dy;
 
-            if (mouseMode === 1 || dist >= DRAG_THRESHOLD) {
+            if (mouseMode === 1 || distSq >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
                 AppState.setMouseMode(1);
-                updatePanPosition(evt.offsetX, evt.offsetY, beginClickX, beginClickY);
+                updatePanPosition(offsetX, offsetY, beginClickX, beginClickY);
                 Renderer.requestRedraw();
             }
         }
@@ -217,17 +228,24 @@ const Events = (() => {
             }
         }, { passive: false });
 
-        let isTouchTickRunning = false;
-
         canvas.addEventListener('touchmove', (evt) => {
             if (!AppState.getLoadedMapImg() || !AppState.getPanLocation() || evt.touches.length === 0) return;
             evt.preventDefault();
+
+            if (evt.touches.length >= 2) {
+                handleTouchMoveLogic(evt);
+                return;
+            }
+
+            const { x, y } = Utils.getOffsetFromTouch(evt.touches[0]);
+            latestTouchX = x;
+            latestTouchY = y;
 
             if (isTouchTickRunning) return;
 
             isTouchTickRunning = true;
             requestAnimationFrame(() => {
-                handleTouchMoveLogic(evt);
+                handleSingleTouchMoveLogic(latestTouchX, latestTouchY);
                 isTouchTickRunning = false;
             });
         }, { passive: false });
@@ -244,12 +262,12 @@ const Events = (() => {
                 const deltaZoom = Math.log(scale) / Math.log(AppState.ZOOM_BASE);
                 const mid = Utils.midpointBetweenTouches(t1, t2);
                 Renderer.setZoomAbsolute(pinch.startZoom + deltaZoom, mid.x, mid.y);
-                return;
             }
+        }
 
+        function handleSingleTouchMoveLogic(x, y) {
             // single finger logic
-            if (evt.touches.length === 1 && AppState.getIsTouching() && AppState.getTouchStartedInside()) {
-                const { x, y } = Utils.getOffsetFromTouch(evt.touches[0]);
+            if (AppState.getIsTouching() && AppState.getTouchStartedInside()) {
                 canvas.mouseX = x;
                 canvas.mouseY = y;
 
@@ -271,9 +289,11 @@ const Events = (() => {
 
                 const beginClickX = AppState.getBeginClickX();
                 const beginClickY = AppState.getBeginClickY();
-                const dist = Math.hypot(x - beginClickX, y - beginClickY);
+                const dx = x - beginClickX;
+                const dy = y - beginClickY;
+                const distSq = dx * dx + dy * dy;
 
-                if (mouseMode === 1 || dist >= DRAG_THRESHOLD) {
+                if (mouseMode === 1 || distSq >= DRAG_THRESHOLD * DRAG_THRESHOLD) {
                     AppState.setMouseMode(1);
                     updatePanPosition(x, y, beginClickX, beginClickY);
                     Renderer.requestRedraw();
@@ -317,12 +337,14 @@ const Events = (() => {
             const touchStartY = AppState.getTouchStartY();
             const touchLastX = AppState.getTouchLastX();
             const touchLastY = AppState.getTouchLastY();
-            const moved = Math.hypot(touchLastX - touchStartX, touchLastY - touchStartY);
+            const dx = touchLastX - touchStartX;
+            const dy = touchLastY - touchStartY;
+            const movedSq = dx * dx + dy * dy;
 
             const mouseMode = AppState.getMouseMode();
             const fakeEvt = { offsetX: touchLastX, offsetY: touchLastY };
 
-            if (mouseMode === 0 && moved < DRAG_THRESHOLD) {
+            if (mouseMode === 0 && movedSq < DRAG_THRESHOLD * DRAG_THRESHOLD) {
                 const radius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
                 const nearest = pickNearestPoint(touchLastX, touchLastY, radius);
                 if (nearest) {
@@ -410,10 +432,10 @@ const Events = (() => {
             const prevDot = track[insertIndex - 1];
             if (prevDot.date && prevDot.time !== null) {
                 const interval = AppState.getConeTimeInterval();
-                let year = parseInt(prevDot.date.substring(0, 4));
-                let month = parseInt(prevDot.date.substring(4, 6)) - 1;
-                let day = parseInt(prevDot.date.substring(6, 8));
-                let hour = parseInt(prevDot.time);
+                let year = +prevDot.date.substring(0, 4);
+                let month = +prevDot.date.substring(4, 6) - 1;
+                let day = +prevDot.date.substring(6, 8);
+                let hour = +prevDot.time;
                 let dateObj = new Date(Date.UTC(year, month, day, hour + interval, 0, 0));
                 
                 newDate = `${dateObj.getUTCFullYear()}${String(dateObj.getUTCMonth() + 1).padStart(2, '0')}${String(dateObj.getUTCDate()).padStart(2, '0')}`;
