@@ -94,8 +94,6 @@
         document.head.appendChild(style);
 
         // GUI //
-        let categoryEditorModal;
-
         const mainFragment = document.createDocumentFragment();
 
         const createElement = (type, options = {}) => {
@@ -134,10 +132,20 @@
 
         function textbox(id, label, fragment) {
             const input = createElement('input', { type: 'text', id });
-            input.addEventListener('focus', () => suppresskeybinds = true, { passive: true });
-            input.addEventListener('blur', () => suppresskeybinds = false, { passive: true });
             return createLabeledElement(id, label, input, fragment);
         }
+
+        // global focus listener for suppressing keybinds
+        document.addEventListener('focusin', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                suppresskeybinds = true;
+            }
+        });
+        document.addEventListener('focusout', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+                suppresskeybinds = false;
+            }
+        });
 
         const undoredo = div();
         undoredo.id = "undo-redo";
@@ -181,7 +189,7 @@
             const selectedTrack = AppState.getSelectedTrack();
             if (selectedTrack) {
                 const oldName = selectedTrack.name;
-                const newName = document.getElementById('track-name-input').value.trim();
+                const newName = trackNameInput.value.trim();
                 if (oldName !== newName) {
                     History.record(History.ActionTypes.setTrackName, {
                         trackIndex: AppState.getTracks().indexOf(selectedTrack),
@@ -263,10 +271,10 @@
             const oldWind = selectedDot.wind, oldPressure = selectedDot.pressure;
             const oldDate = selectedDot.date, oldTime = selectedDot.time;
 
-            const newWindVal = document.getElementById('wind-override-input').value;
-            const newPressureVal = document.getElementById('pressure-override-input').value;
-            const newDateVal = document.getElementById('point-date-input').value;
-            const newTimeVal = document.getElementById('point-time-input').value;
+            const newWindVal = windOverrideInput.value;
+            const newPressureVal = pressureOverrideInput.value;
+            const newDateVal = dateOverrideInput.value;
+            const newTimeVal = timeOverrideInput.value;
 
             const newWind = newWindVal === '' ? null : parseInt(newWindVal, 10);
             const newPressure = newPressureVal === '' ? null : parseInt(newPressureVal, 10);
@@ -403,7 +411,7 @@
         const textSizeInput = textbox('cg-text-size', 'Label text size:', cgFrag);
         textSizeInput.type = 'range'; textSizeInput.min = '8'; textSizeInput.max = '24';
         textSizeInput.value = AppState.getConeTextSize();
-        textSizeInput.oninput = () => { AppState.setConeTextSize(parseInt(textSizeInput.value)); Renderer.requestRedraw(); };
+        textSizeInput.oninput = () => { AppState.setConeTextSize(parseInt(textSizeInput.value, 10)); Renderer.requestRedraw(); };
 
         const cgOutlineCb = checkbox('cg-outline-cb', 'Force point outlines?', cgFrag);
         cgOutlineCb.onchange = () => { AppState.setConePointOutline(cgOutlineCb.checked); Renderer.requestRedraw(); };
@@ -416,7 +424,7 @@
         const coneGrowthInput = textbox('cg-cone-growth', 'Cone spread:', cgFrag);
         coneGrowthInput.type = 'range'; coneGrowthInput.min = '5'; coneGrowthInput.max = '200';
         coneGrowthInput.value = AppState.getConeGrowth();
-        coneGrowthInput.oninput = () => { AppState.setConeGrowth(parseInt(coneGrowthInput.value)); Renderer.requestRedraw(); };
+        coneGrowthInput.oninput = () => { AppState.setConeGrowth(parseInt(coneGrowthInput.value, 10)); Renderer.requestRedraw(); };
 
         appendSection('Tools');
         const cgCascadeBtn = button('Cascade dates (from selection)', cgFrag);
@@ -558,7 +566,7 @@
                     await Database.deleteMap(currentMapName);
                     alert(`Map "${currentMapName}" deleted successfully. Aaand it's gone.`);
 
-                    customMapImg = null;
+                    AppState.setCustomMapImg(null);
                     AppState.setCurrentMapName('Default');
                     AppState.setUseCustomMap(false);
                     customMapCheckbox.checked = false;
@@ -644,6 +652,22 @@
             }
         });
 
+        // reusable hidden file input for imports
+        const sharedFileInput = createElement('input', { type: 'file' });
+        sharedFileInput.style.display = 'none';
+        document.body.appendChild(sharedFileInput);
+
+        const promptImport = (accept, handler) => {
+            sharedFileInput.accept = accept;
+            sharedFileInput.onchange = () => {
+                if (sharedFileInput.files.length > 0) {
+                    handler(sharedFileInput.files[0]);
+                    sharedFileInput.value = '';
+                }
+            };
+            sharedFileInput.click();
+        };
+
         // --- create buttons ---
         createStandardButton('Download image', () => {
             const canvas = AppState.getCanvas();
@@ -661,6 +685,9 @@
         importExportSubContainer.style.display = 'flex';
         importExportSubContainer.style.gap = '5px';
         importExportSubContainer.style.flexGrow = '1';
+
+        const compressJsonCheckbox = createElement('input', { type: 'checkbox', id: 'compress-json-checkbox' });
+        const compatModeCheckbox = createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' });
 
         const exportDropdown = createDropdownButton('Export', [
             {
@@ -680,7 +707,7 @@
             {
                 label: 'JSON',
                 action: () => {
-                    const compressJson = document.getElementById('compress-json-checkbox').checked;
+                    const compressJson = compressJsonCheckbox.checked;
                     const decimalPlaces = parseInt(decimalPlacesDropdown.value, 10);
                     const json = ImportExport.exportJSON(decimalPlaces);
                     const jsonString = compressJson ? JSON.stringify(json) : JSON.stringify(json, null, 2);
@@ -699,35 +726,11 @@
         const importDropdown = createDropdownButton('Import', [
             {
                 label: 'HURDAT',
-                action: () => {
-                    const fileInput = createElement('input', { type: 'file', accept: '.txt,text/plain' });
-                    fileInput.style.display = 'none';
-                    fileInput.onchange = () => {
-                        if (fileInput.files.length > 0) {
-                            ImportExport.importHURDATFile(fileInput.files[0]);
-                            fileInput.value = "";
-                        }
-                    };
-                    document.body.appendChild(fileInput);
-                    fileInput.click();
-                    document.body.removeChild(fileInput);
-                }
+                action: () => promptImport('.txt,text/plain', (file) => ImportExport.importHURDATFile(file))
             },
             {
                 label: 'JSON',
-                action: () => {
-                    const fileInput = createElement('input', { type: 'file', accept: '.json,application/json' });
-                    fileInput.style.display = 'none';
-                    fileInput.onchange = () => {
-                        if (fileInput.files.length > 0) {
-                            ImportExport.importJSONFile(fileInput.files[0]);
-                            fileInput.value = ""; // reset input after processing
-                        }
-                    };
-                    document.body.appendChild(fileInput);
-                    fileInput.click();
-                    document.body.removeChild(fileInput);
-                }
+                action: () => promptImport('.json,application/json', (file) => ImportExport.importJSONFile(file))
             }
         ]);
         importExportSubContainer.appendChild(importDropdown);
@@ -739,10 +742,10 @@
         jsonOptionsDiv.style.cssText = 'border: none; padding: .2rem 0 0 0; margin-bottom: 0;';
         exportContainer.appendChild(jsonOptionsDiv);
         jsonOptionsDiv.append(
-            createElement('input', { type: 'checkbox', id: 'compress-json-checkbox' }),
+            compressJsonCheckbox,
             createElement('label', { htmlFor: 'compress-json-checkbox', textContent: 'Compress JSON', title: 'Minimizes the size of the JSON file by removing unnecessary whitespace. May make the file harder to read, but reduces file size by up to 60%.' }),
             createElement('br'),
-            createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' }),
+            compatModeCheckbox,
             createElement('label', { htmlFor: 'compatibility-mode-checkbox', textContent: 'Compatibility mode', title: 'Adds missing fields to the HURDAT format. Only applies to HURDAT exports, and necessary for some parsers (like GoldStandardBot).' })
         );
 
@@ -765,7 +768,7 @@
             const allSaves = await Database.list();
             const folders = await Database.loadFolders();
 
-            const browserDiv = document.getElementById('season-browser');
+            const browserDiv = seasonBrowserDiv;
             browserDiv.innerHTML = '';
 
             const assignedSaves = new Set(folders.flatMap(f => f.seasons));
@@ -790,6 +793,9 @@
                 backButton.disabled = false;
             }
 
+            const currentSaveName = AppState.getSaveName();
+            const selectedBrowserItems = AppState.getSelectedBrowserItems();
+
             itemsToShow.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).forEach(item => {
                 const itemDiv = createElement('div', {
                     className: `browser-item ${item.type}-item`,
@@ -797,11 +803,10 @@
                 });
                 itemDiv.dataset.name = item.name;
                 itemDiv.dataset.type = item.type;
-                if (AppState.getSaveName() && item.name === AppState.getSaveName()) itemDiv.classList.add('selected');
+                if (currentSaveName && item.name === currentSaveName) itemDiv.classList.add('selected');
 
                 itemDiv.addEventListener('click', (e) => {
                     const itemName = item.name;
-                    const selectedBrowserItems = AppState.getSelectedBrowserItems();
                     if (!e.ctrlKey && !e.metaKey) {
                         clearBrowserSelection();
                     }
@@ -990,21 +995,23 @@
 
         function refreshCategoryDropdown() {
             const selectedValue = categorySelect.value;
-            categorySelect.innerHTML = '';
             const masterCategories = AppState.getMasterCategories();
+            const fragment = new DocumentFragment();
             masterCategories.forEach((cat, index) => {
                 const opt = createElement('option', { value: index, textContent: cat.name });
-                categorySelect.appendChild(opt);
+                fragment.appendChild(opt);
             });
+            categorySelect.replaceChildren(fragment);
             categorySelect.value = masterCategories.some((c, i) => i == selectedValue) ? selectedValue : AppState.getCategoryToPlace();
         }
 
         function refreshCustomCategoryList() {
-            const listDiv = document.getElementById('custom-category-list');
-            if (!listDiv) return;
+            const listDiv = customCategoryListDiv;
             listDiv.innerHTML = '';
 
             const customCategories = AppState.getCustomCategories();
+            const frag = new DocumentFragment();
+
             customCategories.forEach(cat => {
                 const catDiv = div();
                 catDiv.className = 'custom-cat-item';
@@ -1020,8 +1027,9 @@
 
                 buttonsDiv.append(editBtn, deleteBtn);
                 catDiv.append(nameSpan, buttonsDiv);
-                listDiv.appendChild(catDiv);
+                frag.appendChild(catDiv);
             });
+            listDiv.appendChild(frag);
         }
 
         refreshGUI = () => {
@@ -1053,10 +1061,11 @@
                 pointInfoContainer.style.display = 'block';
                 windOverrideInput.value = selectedDot.wind ?? '';
                 pressureOverrideInput.value = selectedDot.pressure ?? '';
-                document.getElementById('point-date-input').value = selectedDot.date ?? '';
-                document.getElementById('point-time-input').value = selectedDot.time ?? '';
-                windOverrideInput.placeholder = `e.g. ${AppState.getMasterCategories()[selectedDot.cat]?.speed || 'N/A'}`;
-                pressureOverrideInput.placeholder = `e.g.: ${AppState.getMasterCategories()[selectedDot.cat]?.pressure || 'N/A'}`;
+                dateOverrideInput.value = selectedDot.date ?? '';
+                timeOverrideInput.value = selectedDot.time ?? '';
+                const masterCat = AppState.getMasterCategories()[selectedDot.cat];
+                windOverrideInput.placeholder = `e.g. ${masterCat?.speed || 'N/A'}`;
+                pressureOverrideInput.placeholder = `e.g.: ${masterCat?.pressure || 'N/A'}`;
             } else {
                 pointInfoContainer.style.display = 'none';
             }
@@ -1074,14 +1083,15 @@
             saveNameTextbox.value = AppState.getSaveName() || '';
 
             // sync ConeGen modal inputs
-            const cgModeCb = document.getElementById('cg-mode-cb');
-            if (cgModeCb) cgModeCb.checked = AppState.getConeGenMode();
-            const cgConeCb = document.getElementById('cg-cone-visible-cb');
-            if (cgConeCb) cgConeCb.checked = AppState.getConeVisible();
-            const cgUnitSel = document.getElementById('cg-unit-select');
-            if (cgUnitSel) cgUnitSel.value = AppState.getConeUnit();
-            const cgOutlineCb = document.getElementById('cg-outline-cb');
-            if (cgOutlineCb) cgOutlineCb.checked = AppState.getConePointOutline();
+            cgModeCb.checked = AppState.getConeGenMode();
+            cgConeVisibleCb.checked = AppState.getConeVisible();
+            cgMultiUnitCb.checked = AppState.getConeShowMultiUnit();
+            unitSelect.value = AppState.getConeUnit();
+            cgOutlineCb.checked = AppState.getConePointOutline();
+            cgOutlineColor.value = AppState.getConeOutlineColor();
+            textSizeInput.value = AppState.getConeTextSize();
+            coneGrowthInput.value = AppState.getConeGrowth();
+            timeIntervalInput.value = AppState.getConeTimeInterval();
 
             refreshMapDropdown();
             Utils.updateCoordinatesDisplay();
@@ -1092,35 +1102,32 @@
 
         uiContainer.appendChild(mainFragment);
 
+        const newMapNameInput = document.getElementById('new-map-name');
+        const newMapFileInput = document.getElementById('new-map-file');
+        const mapNameErrorSpan = document.getElementById('map-name-error');
+
         uploadMapButton.onclick = () => {
             mapUploaderDiv.style.display = mapUploaderDiv.style.display === 'none' ? 'block' : 'none';
-            document.getElementById('map-name-error').textContent = '';
+            mapNameErrorSpan.textContent = '';
         };
-
-        const mapNameInput = document.getElementById('new-map-name');
-        mapNameInput.addEventListener('focus', () => suppresskeybinds = true, { passive: true });
-        mapNameInput.addEventListener('blur', () => suppresskeybinds = false, { passive: true });
 
         document.getElementById('cancel-new-map-btn').onclick = () => {
             mapUploaderDiv.style.display = 'none';
         };
 
         document.getElementById('save-new-map-btn').onclick = async () => {
-            const nameInput = document.getElementById('new-map-name');
-            const fileInput = document.getElementById('new-map-file');
-            const errorSpan = document.getElementById('map-name-error');
-            const mapName = nameInput.value.trim();
-            const file = fileInput.files[0];
+            const mapName = newMapNameInput.value.trim();
+            const file = newMapFileInput.files[0];
 
-            errorSpan.textContent = '';
+            mapNameErrorSpan.textContent = '';
 
             const MAP_NAME_REGEX = /^[a-zA-Z0-9 _\-]{4,32}$/;
             if (!MAP_NAME_REGEX.test(mapName)) {
-                errorSpan.textContent = 'Invalid name. Use 4-32 letters, numbers, spaces, _, or -.';
+                mapNameErrorSpan.textContent = 'Invalid name. Use 4-32 letters, numbers, spaces, _, or -.';
                 return;
             }
             if (!file) {
-                errorSpan.textContent = 'Please select a file.';
+                mapNameErrorSpan.textContent = 'Please select a file.';
                 return;
             }
 
@@ -1129,8 +1136,8 @@
                 await Database.saveMap(mapName, new Uint8Array(arrayBuffer));
 
                 mapUploaderDiv.style.display = 'none';
-                nameInput.value = '';
-                fileInput.value = '';
+                newMapNameInput.value = '';
+                newMapFileInput.value = '';
 
                 await refreshMapDropdown();
                 AppState.setCurrentMapName(mapName);
@@ -1145,16 +1152,19 @@
 
             } catch (error) {
                 console.error("Jinkies! Error saving map:", error);
-                errorSpan.textContent = `Jinkies! ${error.message}. Check console.`;
+                mapNameErrorSpan.textContent = `Jinkies! ${error.message}. Check console.`;
             }
         };
 
         // --- Category Editor Modal Logic ---
+        let catEditorTitle, catEditorOrigName, catEditorName, catEditorColor, catEditorAltColor, catEditorSpeed, catEditorPressure;
+
         function createCategoryEditorModal() {
             const modal = createElement('div', { id: 'category-editor-modal' });
             modal.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; display: none; align-items: center; justify-content: center;`;
             const form = createElement('form');
             form.style.cssText = `background: #f0f0f0; color: #333; padding: 20px; border-radius: 5px; width: 320px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);`;
+            
             form.innerHTML = `
                 <h4 id="category-editor-title" style="margin-top: 0;">Edit Category</h4>
                 <input type="hidden" id="category-editor-original-name">
@@ -1169,15 +1179,23 @@
             modal.appendChild(form);
             document.body.appendChild(modal);
 
+            catEditorTitle = form.querySelector('#category-editor-title');
+            catEditorOrigName = form.querySelector('#category-editor-original-name');
+            catEditorName = form.querySelector('#category-editor-name');
+            catEditorColor = form.querySelector('#category-editor-color');
+            catEditorAltColor = form.querySelector('#category-editor-alt-color');
+            catEditorSpeed = form.querySelector('#category-editor-speed');
+            catEditorPressure = form.querySelector('#category-editor-pressure');
+
             form.onsubmit = async (e) => {
                 e.preventDefault();
-                const originalName = document.getElementById('category-editor-original-name').value;
+                const originalName = catEditorOrigName.value;
                 const newCategory = {
-                    name: document.getElementById('category-editor-name').value.trim(),
-                    color: document.getElementById('category-editor-color').value,
-                    altColor: document.getElementById('category-editor-alt-color').value,
-                    speed: parseInt(document.getElementById('category-editor-speed').value, 10),
-                    pressure: parseInt(document.getElementById('category-editor-pressure').value, 10)
+                    name: catEditorName.value.trim(),
+                    color: catEditorColor.value,
+                    altColor: catEditorAltColor.value,
+                    speed: parseInt(catEditorSpeed.value, 10),
+                    pressure: parseInt(catEditorPressure.value, 10)
                 };
 
                 if (newCategory.name !== originalName && AppState.getMasterCategories().some(c => c.name === newCategory.name)) {
@@ -1204,7 +1222,7 @@
                 modal.style.display = 'none';
                 Renderer.requestRedraw();
             };
-            document.getElementById('category-editor-cancel').onclick = () => {
+            form.querySelector('#category-editor-cancel').onclick = () => {
                 modal.style.display = 'none';
             };
             return modal;
@@ -1235,13 +1253,13 @@
         function openCategoryEditor(category = null) {
             if (!categoryEditorModal) return;
             const isEditing = !!category;
-            document.getElementById('category-editor-title').textContent = isEditing ? 'Edit category' : 'Add new category';
-            document.getElementById('category-editor-original-name').value = isEditing ? category.name : '';
-            document.getElementById('category-editor-name').value = isEditing ? category.name : '';
-            document.getElementById('category-editor-color').value = isEditing ? category.color : '#888888';
-            document.getElementById('category-editor-alt-color').value = isEditing ? category.altColor : '#999999';
-            document.getElementById('category-editor-speed').value = isEditing ? category.speed : '150';
-            document.getElementById('category-editor-pressure').value = isEditing ? category.pressure : '900';
+            catEditorTitle.textContent = isEditing ? 'Edit category' : 'Add new category';
+            catEditorOrigName.value = isEditing ? category.name : '';
+            catEditorName.value = isEditing ? category.name : '';
+            catEditorColor.value = isEditing ? category.color : '#888888';
+            catEditorAltColor.value = isEditing ? category.altColor : '#999999';
+            catEditorSpeed.value = isEditing ? category.speed : '150';
+            catEditorPressure.value = isEditing ? category.pressure : '900';
             categoryEditorModal.style.display = 'flex';
         }
 
@@ -1249,7 +1267,7 @@
         refreshGUI();
 
         document.addEventListener('keydown', (e) => {
-            if (suppresskeybinds || document.getElementById('category-editor-modal').style.display === 'flex') return;
+            if (suppresskeybinds || categoryEditorModal.style.display === 'flex') return;
 
             // handle arrow key point nudging
             if (AppState.getSelectedDot() && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -1304,7 +1322,7 @@
                 'q': () => AppState.setDeleteTrackPoints(!AppState.getDeleteTrackPoints()),
                 'l': () => AppState.setUseAltColors(!AppState.getUseAltColors()),
                 'p': () => {
-                    const select = document.getElementById('dot-size-select');
+                    const select = dotSizeSelect;
                     select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
                     select.dispatchEvent(new Event('change'));
                 },
