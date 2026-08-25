@@ -19,3 +19,27 @@ body[data-theme="tropicana"] #theme-select {
 body[data-theme="tropicana"] #theme-select option {
 	background: #02ffff;
 }
+
+body[data-theme="tropicana"] #ui-container > .tab-list {
+	background: #00796b !important;
+	border-color: #004d40 !important;
+}
+
+body[data-theme="tropicana"] #ui-container > .tab-list .tab-button {
+	color: #fff;
+}
+
+body[data-theme="tropicana"] #ui-container > .tab-list .tab-button.active {
+	background: #ffd902 !important;
+	color: #173f3f;
+}
+
+body[data-theme="tropicana"] #ui-container .control-section {
+	background: #effff8 !important;
+	color: #173f3f;
+	border-color: #00796b;
+}
+
+body[data-theme="tropicana"] #ui-container .control-section h3 {
+	color: #00695c;
+}

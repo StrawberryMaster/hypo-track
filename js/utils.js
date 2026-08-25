@@ -74,6 +74,15 @@ const Utils = (() => {
     }
 
     // mouse position utilities
+    function getCanvasPoint(evt) {
+        const canvas = AppState.getCanvas();
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (evt.clientX - rect.left) * AppState.WIDTH / rect.width,
+            y: (evt.clientY - rect.top) * AppState.HEIGHT / rect.height
+        };
+    }
+
     function mouseLong(evt) {
         const mapRect = getMapRenderRect();
         return AppState.getPanLocation().long + ((evt.offsetX - mapRect.left) * mapViewWidth()) / mapRect.width;
@@ -86,8 +95,7 @@ const Utils = (() => {
     }
 
     function isValidMousePosition(evt) {
-        const x = evt.offsetX;
-        const y = evt.offsetY;
+        const { x, y } = getCanvasPoint(evt);
         const mapRect = getMapRenderRect();
         return x > mapRect.left && x < mapRect.left + mapRect.width && y > mapRect.top && y < mapRect.top + mapRect.height;
     }
@@ -181,8 +189,8 @@ const Utils = (() => {
         const canvas = AppState.getCanvas();
         const rect = canvas.getBoundingClientRect();
         return {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top
+            x: (touch.clientX - rect.left) * AppState.WIDTH / rect.width,
+            y: (touch.clientY - rect.top) * AppState.HEIGHT / rect.height
         };
     }
 
@@ -196,8 +204,8 @@ const Utils = (() => {
         const canvas = AppState.getCanvas();
         const rect = canvas.getBoundingClientRect();
         return {
-            x: (t1.clientX + t2.clientX) / 2 - rect.left,
-            y: (t1.clientY + t2.clientY) / 2 - rect.top
+            x: ((t1.clientX + t2.clientX) / 2 - rect.left) * AppState.WIDTH / rect.width,
+            y: ((t1.clientY + t2.clientY) / 2 - rect.top) * AppState.HEIGHT / rect.height
         };
     }
 
@@ -235,6 +243,7 @@ const Utils = (() => {
         getMapRenderRect,
         mouseLong,
         mouseLat,
+        getCanvasPoint,
         isValidMousePosition,
         isValidPositionXY,
         longLatToScreenCoords,

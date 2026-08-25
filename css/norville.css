@@ -486,3 +486,59 @@ body[data-theme="norville"] #export-container label {
         margin-left: 300px !important;
     }
 }
+
+body[data-theme="norville"] #ui-container > .tab-list,
+body[data-theme="norville"] #ui-container > .tab-panels,
+body[data-theme="norville"] #ui-container .control-section,
+body[data-theme="norville"] #ui-container .control-section > div {
+    transform: none !important;
+}
+
+body[data-theme="norville"] #ui-container {
+    position: sticky !important;
+    left: auto !important;
+    top: .75rem !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: 360px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+}
+
+body[data-theme="norville"] #canvas-container {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+body[data-theme="norville"] #ui-container > .tab-list {
+    background: #654321 !important;
+    border-color: #f4e4bc !important;
+}
+
+body[data-theme="norville"] #ui-container > .tab-list .tab-button {
+    color: #fff7d6;
+}
+
+body[data-theme="norville"] #ui-container > .tab-list .tab-button.active {
+    background: #f0e68c !important;
+    color: #2d5016;
+}
+
+body[data-theme="norville"] #ui-container .control-section {
+    background: #f0e68c !important;
+    color: #2d5016;
+    border-color: #8b4513;
+}
+
+body[data-theme="norville"] #ui-container .control-section h3 {
+    color: #654321;
+}
+
+body[data-theme="norville"] #ui-container .control-section .dropdown-container,
+body[data-theme="norville"] #ui-container #map-uploader > div {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}

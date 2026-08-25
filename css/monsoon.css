@@ -70,3 +70,27 @@ body[data-theme="monsoon"] #theme-select option {
 	background-color: #fff;
 	color: #444;
 }
+
+body[data-theme="monsoon"] #ui-container > .tab-list {
+	background: #e6e6e6 !important;
+	border-color: #444 !important;
+}
+
+body[data-theme="monsoon"] #ui-container > .tab-list .tab-button {
+	color: #222;
+}
+
+body[data-theme="monsoon"] #ui-container > .tab-list .tab-button.active {
+	background: #fff !important;
+	color: #111;
+}
+
+body[data-theme="monsoon"] #ui-container .control-section {
+	background: #fff !important;
+	color: #222;
+	border-color: #aaa;
+}
+
+body[data-theme="monsoon"] #ui-container .control-section h3 {
+	color: #333;
+}

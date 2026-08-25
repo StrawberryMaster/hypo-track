@@ -77,3 +77,27 @@ body[data-theme="github"] #save-name-textbox {
 body[data-theme="github"] #track-date-container {
     border: .1rem solid #3D444D !important;
 }
+
+body[data-theme="github"] #ui-container > .tab-list {
+    background: #010409 !important;
+    border-color: #3D444D !important;
+}
+
+body[data-theme="github"] #ui-container > .tab-list .tab-button {
+    color: #f0f6fc;
+}
+
+body[data-theme="github"] #ui-container > .tab-list .tab-button.active {
+    background: #238636 !important;
+    color: #fff;
+}
+
+body[data-theme="github"] #ui-container .control-section {
+    background: #1b2129 !important;
+    color: #f0f6fc;
+    border-color: #3D444D;
+}
+
+body[data-theme="github"] #ui-container .control-section h3 {
+    color: #79c0ff;
+}

@@ -173,6 +173,30 @@ body[data-theme="aurora"] #download-btn:hover {
     background-color: rgba(66, 165, 245, .95);
 }
 
+body[data-theme="aurora"] #ui-container > .tab-list {
+    background: #1565c0 !important;
+    border-color: #0d47a1 !important;
+}
+
+body[data-theme="aurora"] #ui-container > .tab-list .tab-button {
+    color: #fff;
+}
+
+body[data-theme="aurora"] #ui-container > .tab-list .tab-button.active {
+    background: #fff !important;
+    color: #0d47a1;
+}
+
+body[data-theme="aurora"] #ui-container .control-section {
+    background: #fff3f7 !important;
+    color: #1f2933;
+    border-color: #42a5f5;
+}
+
+body[data-theme="aurora"] #ui-container .control-section h3 {
+    color: #7b1fa2;
+}
+
 @media (max-width: 1225px) {
     body[data-theme="aurora"] #ui-container {
         flex-flow: row wrap;

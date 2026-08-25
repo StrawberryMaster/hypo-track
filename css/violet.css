@@ -40,3 +40,27 @@ body[data-theme="violet"] #theme-select option {
     background: #6f00b4;
     color: #fff;
 }
+
+body[data-theme="violet"] #ui-container > .tab-list {
+    background: #1d004d !important;
+    border-color: #dab5ff !important;
+}
+
+body[data-theme="violet"] #ui-container > .tab-list .tab-button {
+    color: #fff;
+}
+
+body[data-theme="violet"] #ui-container > .tab-list .tab-button.active {
+    background: #dab5ff !important;
+    color: #270079;
+}
+
+body[data-theme="violet"] #ui-container .control-section {
+    background: #3b006b !important;
+    color: #fff;
+    border-color: #dab5ff;
+}
+
+body[data-theme="violet"] #ui-container .control-section h3 {
+    color: #f0d9ff;
+}

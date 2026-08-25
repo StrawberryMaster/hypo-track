@@ -78,3 +78,27 @@ body[data-theme="cobalt"] input::placeholder {
 body[data-theme="cobalt"] #track-date-container {
     border: 1px solid #233554;
 }
+
+body[data-theme="cobalt"] #ui-container > .tab-list {
+    background: #0a192f !important;
+    border-color: #64ffda !important;
+}
+
+body[data-theme="cobalt"] #ui-container > .tab-list .tab-button {
+    color: #ccd6f6;
+}
+
+body[data-theme="cobalt"] #ui-container > .tab-list .tab-button.active {
+    background: #64ffda !important;
+    color: #0a192f;
+}
+
+body[data-theme="cobalt"] #ui-container .control-section {
+    background: #1b2a41 !important;
+    color: #f0f4f8;
+    border-color: #64ffda;
+}
+
+body[data-theme="cobalt"] #ui-container .control-section h3 {
+    color: #64ffda;
+}

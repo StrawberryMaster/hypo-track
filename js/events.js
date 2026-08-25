@@ -51,15 +51,17 @@ const Events = (() => {
         canvas.addEventListener('wheel', (evt) => {
             evt.preventDefault();
             if (!Utils.isValidMousePosition(evt) || !AppState.getLoadedMapImg() || !AppState.getPanLocation()) return;
-            Renderer.setZoomRelative(-evt.deltaY * ZOOM_SENSITIVITY, evt.offsetX, evt.offsetY);
+            const point = Utils.getCanvasPoint(evt);
+            Renderer.setZoomRelative(-evt.deltaY * ZOOM_SENSITIVITY, point.x, point.y);
         }, { passive: false });
 
         canvas.addEventListener('mousedown', (evt) => {
             if (evt.button !== 0 || !Utils.isValidMousePosition(evt) || !AppState.getLoadedMapImg()) return;
 
             Utils.setHardwareAcceleration(true);
-            AppState.setBeginClickX(evt.offsetX);
-            AppState.setBeginClickY(evt.offsetY);
+            const point = Utils.getCanvasPoint(evt);
+            AppState.setBeginClickX(point.x);
+            AppState.setBeginClickY(point.y);
             AppState.setIsDragging(true);
 
             const hoverTrack = AppState.getHoverTrack();
@@ -85,10 +87,11 @@ const Events = (() => {
         canvas.addEventListener('mousemove', (evt) => {
             const oldX = canvas.mouseX;
             const oldY = canvas.mouseY;
-            canvas.mouseX = evt.offsetX;
-            canvas.mouseY = evt.offsetY;
-            latestMouseOffsetX = evt.offsetX;
-            latestMouseOffsetY = evt.offsetY;
+            const point = Utils.getCanvasPoint(evt);
+            canvas.mouseX = point.x;
+            canvas.mouseY = point.y;
+            latestMouseOffsetX = point.x;
+            latestMouseOffsetY = point.y;
 
             if (AppState.getIsDragging() || oldX !== canvas.mouseX || oldY !== canvas.mouseY) {
                 Renderer.requestRedraw();
@@ -505,7 +508,8 @@ const Events = (() => {
         const searchRadius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());
 
         // check dirty flag internally and rebuild only if needed
-        const nearest = pickNearestPoint(evt.offsetX, evt.offsetY, searchRadius);
+        const point = Utils.getCanvasPoint(evt);
+        const nearest = pickNearestPoint(point.x, point.y, searchRadius);
 
         if (nearest) {
             const tracks = AppState.getTracks();

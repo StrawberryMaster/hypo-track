@@ -45,7 +45,7 @@
             .dropdown-menu {
                 display: none;
                 position: absolute;
-                bottom: 100%;
+                top: 100%;
                 left: 0;
                 background-color: #f9f9f9;
                 min-width: 100%;
@@ -54,7 +54,7 @@
                 border-radius: 3px;
                 border: 1px solid #ccc;
                 padding: 4px 0;
-                margin-bottom: 4px;
+                margin-top: 4px;
             }
             .dropdown-menu.show {
                 display: block;
@@ -505,6 +505,7 @@
         // Custom maps UI //
         const mapsContainer = div();
         mapsContainer.id = "maps-container";
+        mapsContainer.className = 'control-section';
         mainFragment.appendChild(mapsContainer);
 
         const mapsTitle = createElement('h3', { textContent: 'Custom maps' });
@@ -536,6 +537,7 @@
         };
 
         const uploadMapButton = button('Upload new map', mapsFragment);
+        uploadMapButton.classList.add('map-action', 'map-upload-action');
         const mapUploaderDiv = div();
         mapUploaderDiv.id = 'map-uploader';
         mapUploaderDiv.style.cssText = 'display: none; border: 1px solid #ccc; padding: 10px; margin-top: 10px; border-radius: 4px; background: #f9f9f9;';
@@ -554,6 +556,7 @@
         mapsFragment.appendChild(mapUploaderDiv);
 
         const deleteMapButton = button('Delete map', mapsFragment);
+        deleteMapButton.classList.add('map-action', 'map-delete-action');
         deleteMapButton.onclick = async () => {
             const currentMapName = AppState.getCurrentMapName();
             if (currentMapName === 'Default') {
@@ -588,7 +591,12 @@
         // Export/Import UI //
         const exportContainer = div();
         exportContainer.id = "export-container";
+        exportContainer.className = 'control-section';
         mainFragment.appendChild(exportContainer);
+
+        const exportTitle = createElement('h3', { textContent: 'Import & export' });
+        exportTitle.style.margin = '.2rem 0 .5rem 0';
+        exportContainer.appendChild(exportTitle);
 
         const exportButtons = div();
         exportButtons.id = "export-buttons";
@@ -669,7 +677,7 @@
         };
 
         // --- create buttons ---
-        createStandardButton('Download image', () => {
+        const downloadButton = createStandardButton('Download PNG', () => {
             const canvas = AppState.getCanvas();
             const link = document.createElement('a');
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -680,11 +688,7 @@
                 URL.revokeObjectURL(link.href);
             }, 'image/png');
         });
-
-        const importExportSubContainer = div();
-        importExportSubContainer.style.display = 'flex';
-        importExportSubContainer.style.gap = '5px';
-        importExportSubContainer.style.flexGrow = '1';
+        downloadButton.classList.add('download-action');
 
         const compressJsonCheckbox = createElement('input', { type: 'checkbox', id: 'compress-json-checkbox' });
         const compatModeCheckbox = createElement('input', { type: 'checkbox', id: 'compatibility-mode-checkbox' });
@@ -721,7 +725,7 @@
                 }
             }
         ]);
-        importExportSubContainer.appendChild(exportDropdown);
+        exportDropdown.classList.add('data-action');
 
         const importDropdown = createDropdownButton('Import', [
             {
@@ -733,9 +737,8 @@
                 action: () => promptImport('.json,application/json', (file) => ImportExport.importJSONFile(file))
             }
         ]);
-        importExportSubContainer.appendChild(importDropdown);
-
-        exportButtons.appendChild(importExportSubContainer);
+        importDropdown.classList.add('data-action');
+        exportButtons.append(exportDropdown, importDropdown);
 
         // JSON compression options
         const jsonOptionsDiv = div();
@@ -1100,7 +1103,64 @@
             Renderer.requestRedraw();
         };
 
+        const tabNav = createElement('div', { className: 'tab-list', role: 'tablist', 'aria-label': 'HypoTrack control sections' });
+        const tabPanels = createElement('div', { className: 'tab-panels' });
+        const tabDefinitions = [
+            { id: 'track', label: 'Track', elements: [undoredo, dropdowns, buttons] },
+            { id: 'seasons', label: 'Seasons', elements: [saveloadContainer] },
+            { id: 'tools', label: 'Tools', elements: [mapsContainer, exportContainer] },
+            { id: 'settings', label: 'Settings', elements: [catManagementContainer] }
+        ];
+
+        const activateTab = (tabId, moveFocus = false) => {
+            tabDefinitions.forEach(({ id }) => {
+                const tab = document.getElementById(`tab-${id}`);
+                const panel = document.getElementById(`panel-${id}`);
+                const selected = id === tabId;
+                tab.classList.toggle('active', selected);
+                tab.setAttribute('aria-selected', String(selected));
+                tab.tabIndex = selected ? 0 : -1;
+                panel.hidden = !selected;
+            });
+            if (moveFocus) document.getElementById(`tab-${tabId}`).focus();
+        };
+
+        tabDefinitions.forEach(({ id, label, elements }, index) => {
+            const tab = createElement('button', {
+                id: `tab-${id}`,
+                className: 'tab-button',
+                type: 'button',
+                role: 'tab',
+                textContent: label,
+                'aria-controls': `panel-${id}`,
+                'aria-selected': String(index === 0),
+                tabIndex: index === 0 ? 0 : -1
+            });
+            const panel = createElement('section', {
+                id: `panel-${id}`,
+                className: 'tab-panel',
+                role: 'tabpanel',
+                'aria-labelledby': `tab-${id}`
+            });
+            elements.forEach(element => panel.appendChild(element));
+            tab.addEventListener('click', () => activateTab(id));
+            tab.addEventListener('keydown', (event) => {
+                const currentIndex = tabDefinitions.findIndex(item => item.id === id);
+                let nextIndex = currentIndex;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (currentIndex + 1) % tabDefinitions.length;
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (currentIndex - 1 + tabDefinitions.length) % tabDefinitions.length;
+                if (nextIndex !== currentIndex) {
+                    event.preventDefault();
+                    activateTab(tabDefinitions[nextIndex].id, true);
+                }
+            });
+            tabNav.appendChild(tab);
+            tabPanels.appendChild(panel);
+        });
+
         uiContainer.appendChild(mainFragment);
+        uiContainer.append(tabNav, tabPanels);
+        activateTab('track');
 
         const newMapNameInput = document.getElementById('new-map-name');
         const newMapFileInput = document.getElementById('new-map-file');

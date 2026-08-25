@@ -74,7 +74,8 @@
 </head>
 
 <body>
-  <div id="canvas-container">
+  <main id="app-shell">
+  <div id="canvas-container" role="application" aria-label="HypoTrack interactive map">
     <div id="coordinates-tab" class="hidden">
       <div class="coord-label">Coordinates</div>
       <div id="coord-lat" class="coord-value">--</div>
@@ -82,12 +83,13 @@
     </div>
 
     <div id="zoom-controls">
-      <button type="button" id="zoom-out-btn">−</button>
-      <input type="range" id="zoom-slider" min="0" max="15" step="0.25" value="0">
-      <button type="button" id="zoom-in-btn">+</button>
+      <button type="button" id="zoom-out-btn" aria-label="Zoom out">−</button>
+      <label class="sr-only" for="zoom-slider">Map zoom</label>
+      <input type="range" id="zoom-slider" min="0" max="15" step="0.25" value="0" aria-valuetext="Default zoom">
+      <button type="button" id="zoom-in-btn" aria-label="Zoom in">+</button>
     </div>
   </div>
-  <div id="ui-container">
+  <aside id="ui-container" aria-label="HypoTrack controls">
     <div id="theme-selector-container">
       <label id="theme-select-label" for="theme-select">Theme selector</label>
       <select id="theme-select" aria-labelledby="theme-select-label">
@@ -101,7 +103,8 @@
         <option value="norville">Norville</option>
       </select>
     </div>
-  </div>
+  </aside>
+  </main>
 
   <a id="version"></a>
   <script src="js/version.js" defer></script>
