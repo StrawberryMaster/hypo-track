@@ -114,7 +114,7 @@ const Events = (() => {
             if (mouseMode === 2) {
                 const selectedDot = AppState.getSelectedDot();
                 if (selectedDot) {
-                    const fakeEvt = { offsetX, offsetY };
+                    const fakeEvt = { x: offsetX, y: offsetY };
                     selectedDot.long = Utils.mouseLong(fakeEvt);
                     selectedDot.lat = Utils.mouseLat(fakeEvt);
                     AppState.setNeedsIndexRebuild(true); // Mark index dirty immediately
@@ -137,7 +137,7 @@ const Events = (() => {
         }
 
         canvas.addEventListener('mouseup', (evt) => {
-            if (evt.button !== 0 || !AppState.getBeginClickX()) return; // Simplified check
+            if (evt.button !== 0 || AppState.getBeginClickX() === undefined) return;
 
             Utils.setHardwareAcceleration(false);
             AppState.setIsDragging(false);
@@ -279,7 +279,7 @@ const Events = (() => {
                 if (mouseMode === 2) {
                     const selectedDot = AppState.getSelectedDot();
                     if (selectedDot) {
-                        const fakeEvt = { offsetX: x, offsetY: y };
+                        const fakeEvt = { x, y };
                         selectedDot.long = Utils.mouseLong(fakeEvt);
                         selectedDot.lat = Utils.mouseLat(fakeEvt);
                         AppState.setNeedsIndexRebuild(true);
@@ -345,7 +345,7 @@ const Events = (() => {
             const movedSq = dx * dx + dy * dy;
 
             const mouseMode = AppState.getMouseMode();
-            const fakeEvt = { offsetX: touchLastX, offsetY: touchLastY };
+            const fakeEvt = { x: touchLastX, y: touchLastY };
 
             if (mouseMode === 0 && movedSq < DRAG_THRESHOLD * DRAG_THRESHOLD) {
                 const radius = Math.pow(AppState.ZOOM_BASE, AppState.getZoomAmt());

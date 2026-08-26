@@ -75,6 +75,11 @@ const Utils = (() => {
 
     // mouse position utilities
     function getCanvasPoint(evt) {
+        if (!Number.isFinite(evt.clientX) && !Number.isFinite(evt.clientY) &&
+            Number.isFinite(evt.x) && Number.isFinite(evt.y)) {
+            return { x: evt.x, y: evt.y };
+        }
+
         const canvas = AppState.getCanvas();
         const rect = canvas.getBoundingClientRect();
         return {
@@ -85,12 +90,14 @@ const Utils = (() => {
 
     function mouseLong(evt) {
         const mapRect = getMapRenderRect();
-        return AppState.getPanLocation().long + ((evt.offsetX - mapRect.left) * mapViewWidth()) / mapRect.width;
+        const point = getCanvasPoint(evt);
+        return AppState.getPanLocation().long + ((point.x - mapRect.left) * mapViewWidth()) / mapRect.width;
     }
 
     function mouseLat(evt) {
         const mapRect = getMapRenderRect();
-        const relativeY = evt.offsetY - mapRect.top;
+        const point = getCanvasPoint(evt);
+        const relativeY = point.y - mapRect.top;
         return AppState.getPanLocation().lat - (relativeY * mapViewHeight()) / mapRect.height;
     }
 
