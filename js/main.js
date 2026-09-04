@@ -26,8 +26,11 @@ const HypoTrack = (() => {
         
         // create and setup canvas
         const canvas = document.createElement('canvas');
-        canvas.width = AppState.WIDTH;
-        canvas.height = AppState.HEIGHT;
+        const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(AppState.WIDTH * devicePixelRatio);
+        canvas.height = Math.round(AppState.HEIGHT * devicePixelRatio);
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
         
         const container = document.getElementById('canvas-container');
         if (!container) {
@@ -40,7 +43,9 @@ const HypoTrack = (() => {
         canvas.style.touchAction = 'none';
         
         AppState.setCanvas(canvas);
-        AppState.setCtx(canvas.getContext('2d'));
+        const ctx = canvas.getContext('2d');
+        ctx.scale(devicePixelRatio, devicePixelRatio);
+        AppState.setCtx(ctx);
 
         // create UI overlays on canvas
         Renderer.createCoordinatesTab(container);
