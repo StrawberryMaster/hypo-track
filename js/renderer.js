@@ -103,6 +103,8 @@ const Renderer = (() => {
         AppState.setNeedsRedraw(false);
 
         const ctx = AppState.getCtx();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, AppState.WIDTH, AppState.HEIGHT);
 
@@ -172,6 +174,9 @@ const Renderer = (() => {
             sh += overlap * scaleY;
         }
 
+        sw = Math.min(sw, img.width - sx);
+        sh = Math.min(sh, img.height - sy);
+
         if (sw > 0 && sh > 0 && rDx + rDw > mapLeft && rDx < mapLeft + mapWidth && sx < img.width && sy < img.height) {
             ctx.drawImage(img, sx, sy, sw, sh, rDx, rDy, rDw, rDh);
         } else {
@@ -222,8 +227,8 @@ const Renderer = (() => {
             const maxSouthZero = Math.max(south, 0);
 
             if (west < 0) {
-                if (north > 0) drawSection(ctx, mapImgs.nw, -180, 0, 90, 0, west, 0, Math.min(east, 0), north, maxSouthZero, mapWidth, mapHeight, mapLeft, mapTop, west, north, south, mvw);
-                if (south < 0) drawSection(ctx, mapImgs.sw, -180, 0, 0, -90, west, 0, minNorthZero, south, mapWidth, mapHeight, mapLeft, mapTop, west, north, south, mvw);
+                if (north > 0) drawSection(ctx, mapImgs.nw, -180, 0, 90, 0, west, Math.min(east, 0), north, maxSouthZero, mapWidth, mapHeight, mapLeft, mapTop, west, north, south, mvw);
+                if (south < 0) drawSection(ctx, mapImgs.sw, -180, 0, 0, -90, west, Math.min(east, 0), minNorthZero, south, mapWidth, mapHeight, mapLeft, mapTop, west, north, south, mvw);
             }
             if (east > 0) {
                 const maxWestZero = Math.max(west, 0);
