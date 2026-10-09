@@ -51,6 +51,61 @@ a:after {
 	transform: scaleX(0);
 	transition: transform 300ms;
 }
+.modal-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(0, 0, 0, .55);
+}
+
+.modal-dialog {
+	width: min(42rem, 100%);
+	box-sizing: border-box;
+	padding: 1rem;
+	color: inherit;
+	background: #FF69B4;
+	border: .15rem solid #000080;
+	border-radius: .2rem .8rem;
+	box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .35);
+}
+
+.modal-dialog h3 {
+	margin: 0 0 .75rem;
+}
+
+.import-textarea {
+	display: block;
+	width: 100%;
+	min-height: 16rem;
+	box-sizing: border-box;
+	resize: vertical;
+	padding: .65rem;
+	color: inherit;
+	background: rgba(255, 255, 255, .85);
+	border: .1rem solid currentColor;
+	font: 0.9rem/1.4 monospace;
+}
+
+.modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: .5rem;
+	margin: .75rem 0 0;
+}
+
+@media (max-width: 768px) {
+	.modal-dialog {
+		padding: .75rem;
+	}
+
+	.import-textarea {
+		min-height: 12rem;
+	}
+}
 
 a:hover,
 a#version:hover {

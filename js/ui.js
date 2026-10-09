@@ -676,6 +676,51 @@
             sharedFileInput.click();
         };
 
+        const importText = (title, format, handler) => {
+            const overlay = createElement('div', { className: 'modal-overlay' });
+            const dialog = createElement('div', { className: 'modal-dialog' });
+            const heading = createElement('h3', { textContent: title });
+            const textarea = createElement('textarea', {
+                className: 'import-textarea',
+                placeholder: `Paste ${format} data here...`,
+                spellcheck: 'false'
+            });
+            const actions = createElement('div', { className: 'modal-actions' });
+            const cancelButton = createElement('button', { textContent: 'Cancel', className: 'btn' });
+            const importButton = createElement('button', { textContent: 'Import', className: 'btn' });
+
+            const close = () => overlay.remove();
+            cancelButton.onclick = close;
+            importButton.onclick = () => {
+                const text = textarea.value.trim();
+                if (!text) {
+                    textarea.focus();
+                    return;
+                }
+                handler(new File([text], `hypo-track-import.${format.toLowerCase() === 'json' ? 'json' : 'txt'}`, { type: format === 'JSON' ? 'application/json' : 'text/plain' }));
+                close();
+            };
+            overlay.onclick = (event) => {
+                if (event.target === overlay) close();
+            };
+
+            actions.append(cancelButton, importButton);
+            dialog.append(heading, textarea, actions);
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+            textarea.focus();
+        };
+
+        const copyExport = async (text, label) => {
+            try {
+                await navigator.clipboard.writeText(text);
+                alert(`${label} data copied to the clipboard.`);
+            } catch (error) {
+                alert(`Could not copy ${label} data. Please use the download option instead.`);
+                console.error('Clipboard error:', error);
+            }
+        };
+
         // --- create buttons ---
         const downloadButton = createStandardButton('Download PNG', () => {
             const canvas = AppState.getCanvas();
@@ -709,6 +754,10 @@
                 }
             },
             {
+                label: 'Copy HURDAT',
+                action: () => copyExport(ImportExport.exportHURDAT(parseInt(decimalPlacesDropdown.value, 10)), 'HURDAT')
+            },
+            {
                 label: 'JSON',
                 action: () => {
                     const compressJson = compressJsonCheckbox.checked;
@@ -723,6 +772,13 @@
                     link.click();
                     URL.revokeObjectURL(link.href);
                 }
+            },
+            {
+                label: 'Copy JSON',
+                action: () => {
+                    const json = ImportExport.exportJSON(parseInt(decimalPlacesDropdown.value, 10));
+                    copyExport(compressJsonCheckbox.checked ? JSON.stringify(json) : JSON.stringify(json, null, 2), 'JSON');
+                }
             }
         ]);
         exportDropdown.classList.add('data-action');
@@ -733,8 +789,16 @@
                 action: () => promptImport('.txt,text/plain', (file) => ImportExport.importHURDATFile(file))
             },
             {
+                label: 'Paste HURDAT',
+                action: () => importText('Paste HURDAT data', 'HURDAT', (file) => ImportExport.importHURDATFile(file))
+            },
+            {
                 label: 'JSON',
                 action: () => promptImport('.json,application/json', (file) => ImportExport.importJSONFile(file))
+            },
+            {
+                label: 'Paste JSON',
+                action: () => importText('Paste JSON data', 'JSON', (file) => ImportExport.importJSONFile(file))
             }
         ]);
         importDropdown.classList.add('data-action');
